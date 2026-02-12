@@ -1,32 +1,39 @@
 # =============================================================================
-# BeeWAF — Ingress pour protéger l'application de test
-# Quand l'encadrante ajoute l'app, utiliser cet ingress à la place
+# BeeWAF — Protège l'application idts-back
 #
-# Flux : Internet → HAProxy → Nginx Ingress → BeeWAF → App Backend
+# AVANT (sans WAF) :
+#   Internet → HAProxy → Nginx Ingress → idts-back (direct, pas protégé)
 #
-# BeeWAF agit comme reverse-proxy WAF devant l'application
+# APRÈS (avec WAF) :
+#   Internet → HAProxy → Nginx Ingress → BeeWAF → idts-back
+#
+# IMPORTANT : supprimer l'ancien ingress avant d'appliquer celui-ci :
+#   kubectl delete ingress idts-back-ingress -n idts-test
 # =============================================================================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: app-behind-beewaf
+  name: beewaf-protects-idts
   namespace: beewaf
   annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
-    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
 spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - app.dpc.com.tn
-    secretName: app-tls-secret
+    - idts.back.dpc.com.tn
+    secretName: beewaf-idts-tls
   rules:
-  - host: app.dpc.com.tn
+  - host: idts.back.dpc.com.tn
     http:
       paths:
-      # Tout le trafic passe d'abord par BeeWAF
       - path: /
         pathType: Prefix
         backend:

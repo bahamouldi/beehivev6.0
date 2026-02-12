@@ -60,6 +60,10 @@ spec:
           value: "/app/data/train_demo.csv"
         - name: ML_MODE
           value: "advanced"
+        # === REVERSE PROXY : forward clean traffic to the real app ===
+        # idts-back.idts-test.svc.cluster.local = the Spring Boot app
+        - name: BACKEND_URL
+          value: "http://idts-back.idts-test.svc.cluster.local:80"
         - name: BEEWAF_API_KEY
           valueFrom:
             secretKeyRef:

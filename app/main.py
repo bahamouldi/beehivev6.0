@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Request, HTTPException, Depends, Header
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.security import APIKeyHeader
 import logging
 import os
 import secrets
 import time
 import json
+import httpx
 from datetime import datetime
 from pythonjsonlogger.json import JsonFormatter
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
@@ -44,6 +45,26 @@ from waf import threat_feed
 from waf import cluster_manager
 from waf import performance_engine
 from waf import compliance_engine_v5
+
+# === REVERSE PROXY CONFIG ===
+# When BACKEND_URL is set, BeeWAF acts as a reverse proxy WAF
+# All clean requests are forwarded to the backend app
+# When not set, BeeWAF uses its own built-in routes (demo mode)
+BACKEND_URL = os.environ.get('BACKEND_URL', '')
+_proxy_client = None
+
+def get_proxy_client():
+    """Lazy init httpx async client for reverse proxy."""
+    global _proxy_client
+    if _proxy_client is None and BACKEND_URL:
+        _proxy_client = httpx.AsyncClient(
+            base_url=BACKEND_URL,
+            timeout=httpx.Timeout(30.0, connect=10.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            follow_redirects=False,
+            verify=False,  # Backend is internal, no TLS verification needed
+        )
+    return _proxy_client
 
 # JSON Logging Configuration for ELK Stack
 class CustomJsonFormatter(JsonFormatter):
@@ -1312,3 +1333,72 @@ async def admin_adaptive_mode(request: Request):
 async def echo(request: Request):
     body = await request.body()
     return JSONResponse(content=(body.decode('utf-8', errors='ignore') if body else ''))
+
+
+# =============================================================================
+# REVERSE PROXY — Forward clean requests to backend application
+# Activated when BACKEND_URL env var is set
+# =============================================================================
+if BACKEND_URL:
+    logger.info(f"🔀 Reverse Proxy Mode: forwarding clean traffic to {BACKEND_URL}")
+
+    @app.api_route('/{path:path}', methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS','HEAD'])
+    async def reverse_proxy(request: Request, path: str):
+        """Forward requests that passed all WAF checks to the backend app."""
+        client = get_proxy_client()
+        if not client:
+            return JSONResponse(status_code=502, content={"error": "Backend not configured"})
+
+        try:
+            # Read request body
+            body = await request.body()
+
+            # Forward headers (remove hop-by-hop headers)
+            hop_by_hop = {'host', 'connection', 'keep-alive', 'transfer-encoding',
+                          'te', 'trailer', 'upgrade', 'proxy-authorization',
+                          'proxy-authenticate'}
+            headers = {k: v for k, v in request.headers.items()
+                       if k.lower() not in hop_by_hop}
+
+            # Add X-Forwarded headers
+            client_ip = request.headers.get('x-real-ip', request.client.host if request.client else '0.0.0.0')
+            headers['X-Forwarded-For'] = client_ip
+            headers['X-Forwarded-Proto'] = request.headers.get('x-forwarded-proto', 'http')
+            headers['X-Forwarded-Host'] = request.headers.get('host', '')
+            headers['X-BeeWAF-Inspected'] = 'true'
+
+            # Forward to backend
+            url = f"/{path}"
+            if request.query_params:
+                url = f"/{path}?{request.query_params}"
+
+            backend_resp = await client.request(
+                method=request.method,
+                url=url,
+                headers=headers,
+                content=body,
+            )
+
+            # Return backend response
+            resp_headers = {k: v for k, v in backend_resp.headers.items()
+                           if k.lower() not in ('content-encoding', 'content-length',
+                                                 'transfer-encoding', 'connection')}
+
+            return Response(
+                content=backend_resp.content,
+                status_code=backend_resp.status_code,
+                headers=resp_headers,
+                media_type=backend_resp.headers.get('content-type'),
+            )
+
+        except httpx.ConnectError:
+            logger.error(f"Cannot connect to backend: {BACKEND_URL}")
+            return JSONResponse(status_code=502, content={"error": "Backend unavailable"})
+        except httpx.TimeoutException:
+            logger.error(f"Backend timeout: {BACKEND_URL}")
+            return JSONResponse(status_code=504, content={"error": "Backend timeout"})
+        except Exception as e:
+            logger.error(f"Proxy error: {str(e)}")
+            return JSONResponse(status_code=502, content={"error": "Proxy error"})
+else:
+    logger.info("🏠 Demo Mode: no BACKEND_URL set, using built-in routes")
