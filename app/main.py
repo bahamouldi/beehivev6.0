@@ -1340,7 +1340,7 @@ async def echo(request: Request):
 # Activated when BACKEND_URL env var is set
 # =============================================================================
 if BACKEND_URL:
-    logger.info(f"🔀 Reverse Proxy Mode: forwarding clean traffic to {BACKEND_URL}")
+    log.info(f"🔀 Reverse Proxy Mode: forwarding clean traffic to {BACKEND_URL}")
 
     @app.api_route('/{path:path}', methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS','HEAD'])
     async def reverse_proxy(request: Request, path: str):
@@ -1392,13 +1392,13 @@ if BACKEND_URL:
             )
 
         except httpx.ConnectError:
-            logger.error(f"Cannot connect to backend: {BACKEND_URL}")
+            log.error(f"Cannot connect to backend: {BACKEND_URL}")
             return JSONResponse(status_code=502, content={"error": "Backend unavailable"})
         except httpx.TimeoutException:
-            logger.error(f"Backend timeout: {BACKEND_URL}")
+            log.error(f"Backend timeout: {BACKEND_URL}")
             return JSONResponse(status_code=504, content={"error": "Backend timeout"})
         except Exception as e:
-            logger.error(f"Proxy error: {str(e)}")
+            log.error(f"Proxy error: {str(e)}")
             return JSONResponse(status_code=502, content={"error": "Proxy error"})
 else:
-    logger.info("🏠 Demo Mode: no BACKEND_URL set, using built-in routes")
+    log.info("🏠 Demo Mode: no BACKEND_URL set, using built-in routes")
