@@ -1,0 +1,36 @@
+# =============================================================================
+# BeeWAF — Ingress pour protéger l'application de test
+# Quand l'encadrante ajoute l'app, utiliser cet ingress à la place
+#
+# Flux : Internet → HAProxy → Nginx Ingress → BeeWAF → App Backend
+#
+# BeeWAF agit comme reverse-proxy WAF devant l'application
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-behind-beewaf
+  namespace: beewaf
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - app.dpc.com.tn
+    secretName: app-tls-secret
+  rules:
+  - host: app.dpc.com.tn
+    http:
+      paths:
+      # Tout le trafic passe d'abord par BeeWAF
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: beewaf-svc
+            port:
+              number: 80

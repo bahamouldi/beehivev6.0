@@ -1,0 +1,162 @@
+# =============================================================================
+# BeeWAF — Logstash ConfigMap + Deployment pour K8s
+# Pipeline : Filebeat → Logstash → Elasticsearch
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: beewaf
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    xpack.monitoring.elasticsearch.hosts: ["http://elasticsearch:9200"]
+
+  beewaf.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+    }
+
+    filter {
+      # Only process beewaf logs
+      if [kubernetes][labels][app] != "beewaf" and [container][name] != "beewaf_sklearn" {
+        drop { }
+      }
+
+      # Drop non-JSON logs (Uvicorn access logs etc)
+      if [message] =~ "^INFO:" or [message] =~ "^\[" or [message] !~ "^\{" {
+        drop { }
+      }
+
+      if [message] {
+        json {
+          source => "message"
+          skip_on_invalid_json => true
+          target => "beewaf"
+        }
+      }
+
+      if [beewaf] {
+        mutate {
+          rename => { "[beewaf][event]" => "event_type" }
+          rename => { "[beewaf][message]" => "log_message" }
+          rename => { "[beewaf][client_ip]" => "client_ip" }
+          rename => { "[beewaf][method]" => "http_method" }
+          rename => { "[beewaf][path]" => "http_path" }
+          rename => { "[beewaf][status_code]" => "status_code" }
+          rename => { "[beewaf][blocked]" => "blocked" }
+          rename => { "[beewaf][block_reason]" => "block_reason" }
+          rename => { "[beewaf][latency_ms]" => "latency_ms" }
+          rename => { "[beewaf][body_preview]" => "body_preview" }
+          rename => { "[beewaf][user_agent]" => "user_agent" }
+          rename => { "[beewaf][timestamp]" => "app_timestamp" }
+          add_field => { "service" => "beewaf" }
+        }
+      }
+
+      if [app_timestamp] {
+        date {
+          match => [ "app_timestamp", "ISO8601" ]
+          target => "@timestamp"
+        }
+      }
+
+      if [event_type] == "blocked" {
+        mutate { add_tag => [ "security", "blocked" ] }
+
+        if [block_reason] == "regex-sqli" {
+          mutate { add_field => { "attack_type" => "SQL Injection" } add_tag => [ "sqli" ] }
+        } else if [block_reason] == "regex-xss" {
+          mutate { add_field => { "attack_type" => "Cross-Site Scripting" } add_tag => [ "xss" ] }
+        } else if [block_reason] == "regex-path-traversal" {
+          mutate { add_field => { "attack_type" => "Path Traversal" } add_tag => [ "lfi" ] }
+        } else if [block_reason] == "regex-rce" {
+          mutate { add_field => { "attack_type" => "Remote Code Execution" } add_tag => [ "rce" ] }
+        } else if [block_reason] =~ "ml-" {
+          mutate { add_field => { "attack_type" => "ML Detected" } add_tag => [ "ml-detection" ] }
+        } else if [block_reason] == "rate-limit" {
+          mutate { add_field => { "attack_type" => "Rate Limit" } add_tag => [ "rate-limit" ] }
+        } else {
+          mutate { add_field => { "attack_type" => "Other" } }
+        }
+      }
+
+      mutate {
+        remove_field => [ "agent", "ecs", "input", "log", "host", "event" ]
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts => ["elasticsearch:9200"]
+        index => "beewaf-logs-%{+YYYY.MM.dd}"
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: beewaf
+  labels:
+    app: logstash
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash:8.11.0
+        ports:
+        - containerPort: 5044
+          name: beats
+        - containerPort: 9600
+          name: monitoring
+        env:
+        - name: LS_JAVA_OPTS
+          value: "-Xms256m -Xmx256m"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "384Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: logstash-config
+          mountPath: /usr/share/logstash/config/logstash.yml
+          subPath: logstash.yml
+        - name: logstash-config
+          mountPath: /usr/share/logstash/pipeline/beewaf.conf
+          subPath: beewaf.conf
+      volumes:
+      - name: logstash-config
+        configMap:
+          name: logstash-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: beewaf
+  labels:
+    app: logstash
+spec:
+  selector:
+    app: logstash
+  ports:
+  - name: beats
+    port: 5044
+    targetPort: 5044
+  - name: monitoring
+    port: 9600
+    targetPort: 9600
+  type: ClusterIP

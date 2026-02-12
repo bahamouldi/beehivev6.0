@@ -1,0 +1,35 @@
+# =============================================================================
+# BeeWAF — Ingress pour cluster DPC
+# HAProxy (207.180.211.157) → Nginx Ingress → BeeWAF
+# cert-manager génère le certificat TLS automatiquement
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: beewaf-ingress
+  namespace: beewaf
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    # cert-manager auto-TLS (décommenter en production)
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - beewaf.dpc.com.tn
+    secretName: beewaf-tls-secret
+  rules:
+  - host: beewaf.dpc.com.tn
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: beewaf-svc
+            port:
+              number: 80

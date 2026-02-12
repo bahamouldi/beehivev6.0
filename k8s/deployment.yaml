@@ -1,0 +1,94 @@
+# =============================================================================
+# BeeWAF — Deployment pour cluster DPC (K8s v1.29)
+# Cluster : 3 masters + 2 workers (Ubuntu 22.04, containerd)
+# HAProxy (207.180.211.157) → Nginx Ingress → BeeWAF → App Backend
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beewaf
+  namespace: beewaf
+  labels:
+    app: beewaf
+    version: v6.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: beewaf
+  template:
+    metadata:
+      labels:
+        app: beewaf
+        version: v6.0
+      annotations:
+        # Filebeat autodiscover — collecte les logs JSON de ce pod
+        co.elastic.logs/enabled: "true"
+        co.elastic.logs/json.keys_under_root: "true"
+        co.elastic.logs/json.add_error_key: "true"
+    spec:
+      # Répartir les pods sur différents workers
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - beewaf
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: beewaf
+        image: beewaf:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        env:
+        - name: BEEWAF_MODEL_PATH
+          value: "/app/models/model.pkl"
+        - name: BEEWAF_TRAIN_DATA
+          value: "/app/data/train_demo.csv"
+        - name: ML_MODE
+          value: "advanced"
+        - name: BEEWAF_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: beewaf-secrets
+              key: BEEWAF_API_KEY
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 20
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        # Les modèles ML sont pré-entraînés et baked dans l'image Docker
+        # (voir Dockerfile.k8s — étape builder exécute train_ml_models.py)
+        # Pas besoin de volume externe — tout est dans le conteneur
