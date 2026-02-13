@@ -316,6 +316,7 @@ data:
         hosts => ["http://elasticsearch:9200"]
         index => "beewaf-logs-%{+YYYY.MM.dd}"
         manage_template => true
+        template_api => "legacy"
         template_name => "beewaf-logs"
         template_overwrite => true
         template => "/usr/share/logstash/pipeline/beewaf-template.json"
@@ -389,14 +390,14 @@ spec:
           name: monitoring
         env:
         - name: LS_JAVA_OPTS
-          value: "-Xms192m -Xmx192m"
+          value: "-Xms256m -Xmx256m"
         resources:
           requests:
-            cpu: "100m"
-            memory: "256Mi"
+            cpu: "200m"
+            memory: "512Mi"
           limits:
-            cpu: "300m"
-            memory: "384Mi"
+            cpu: "500m"
+            memory: "768Mi"
         volumeMounts:
         - name: logstash-config
           mountPath: /usr/share/logstash/config/logstash.yml
@@ -474,13 +475,15 @@ spec:
           value: "false"
         - name: TELEMETRY_ENABLED
           value: "false"
+        - name: NODE_OPTIONS
+          value: "--max-old-space-size=512"
         resources:
           requests:
-            cpu: "100m"
-            memory: "256Mi"
+            cpu: "200m"
+            memory: "512Mi"
           limits:
-            cpu: "300m"
-            memory: "384Mi"
+            cpu: "500m"
+            memory: "1Gi"
         readinessProbe:
           httpGet:
             path: /api/status
@@ -493,7 +496,7 @@ spec:
           httpGet:
             path: /api/status
             port: 5601
-          initialDelaySeconds: 120
+          initialDelaySeconds: 180
           periodSeconds: 30
           timeoutSeconds: 10
 ---
