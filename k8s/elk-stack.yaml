@@ -561,8 +561,8 @@ data:
               matchers:
               - logs_path:
                   logs_path: "/var/log/containers/"
-        # Ne pas parser le JSON ici — Logstash s'en charge
-        json.keys_under_root: false
+        # type: container gère automatiquement le format CRI/containerd
+        # Le parsing JSON du message BeeWAF est fait par Logstash
 
     output.logstash:
       hosts: ["logstash.beewaf.svc.cluster.local:5044"]
