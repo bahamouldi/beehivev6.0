@@ -401,9 +401,6 @@ spec:
         - name: logstash-config
           mountPath: /usr/share/logstash/pipeline/beewaf.conf
           subPath: beewaf.conf
-        - name: logstash-config
-          mountPath: /usr/share/logstash/pipeline/beewaf-template.json
-          subPath: beewaf-template.json
       volumes:
       - name: logstash-config
         configMap:
