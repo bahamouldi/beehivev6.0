@@ -112,6 +112,45 @@ if [ $ELAPSED -ge $MAX_WAIT ]; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Étape 2b : Créer l'index template ES (Logstash manage_template=false)
+# ─────────────────────────────────────────────────────────────────────────────
+echo -e "\n${YELLOW}  📋 Création de l'index template beewaf-logs...${NC}"
+ES_POD=$(kubectl get pods -n "$NAMESPACE" -l app=elasticsearch --no-headers | awk '{print $1}' | head -1)
+kubectl exec -n "$NAMESPACE" "$ES_POD" -- curl -s -X PUT "http://localhost:9200/_template/beewaf-logs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "index_patterns": ["beewaf-logs-*"],
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "refresh_interval": "5s"
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "event_type": { "type": "keyword" },
+        "client_ip": { "type": "ip" },
+        "http_method": { "type": "keyword" },
+        "http_path": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 512 } } },
+        "status_code": { "type": "integer" },
+        "blocked": { "type": "boolean" },
+        "block_reason": { "type": "keyword" },
+        "attack_type": { "type": "keyword" },
+        "attack_category": { "type": "keyword" },
+        "severity": { "type": "keyword" },
+        "latency_ms": { "type": "float" },
+        "body_preview": { "type": "text" },
+        "user_agent": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
+        "log_message": { "type": "text" },
+        "log_level": { "type": "keyword" },
+        "service": { "type": "keyword" },
+        "request_count": { "type": "integer" },
+        "tags": { "type": "keyword" }
+      }
+    }
+  }' && echo -e "\n${GREEN}  ✅ Index template créé${NC}" || echo -e "\n${RED}  ⚠️ Template échoué (non bloquant)${NC}"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Étape 3 : Attendre Logstash + Kibana + Filebeat
 # ─────────────────────────────────────────────────────────────────────────────
 echo -e "\n${YELLOW}[3/6] Attente Logstash + Kibana + Filebeat...${NC}"

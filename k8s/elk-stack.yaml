@@ -62,7 +62,7 @@ spec:
         - name: xpack.security.transport.ssl.enabled
           value: "false"
         - name: ES_JAVA_OPTS
-          value: "-Xms384m -Xmx384m"
+          value: "-Xms512m -Xmx512m"
         - name: cluster.name
           value: "beewaf-logs"
         - name: node.name
@@ -73,7 +73,7 @@ spec:
             memory: "512Mi"
           limits:
             cpu: "500m"
-            memory: "768Mi"
+            memory: "1Gi"
         readinessProbe:
           httpGet:
             path: /_cluster/health?wait_for_status=yellow
@@ -315,11 +315,7 @@ data:
       elasticsearch {
         hosts => ["http://elasticsearch:9200"]
         index => "beewaf-logs-%{+YYYY.MM.dd}"
-        manage_template => true
-        template_api => "legacy"
-        template_name => "beewaf-logs"
-        template_overwrite => true
-        template => "/usr/share/logstash/pipeline/beewaf-template.json"
+        manage_template => false
       }
     }
 
