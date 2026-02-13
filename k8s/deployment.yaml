@@ -12,11 +12,11 @@ metadata:
     app: beewaf
     version: v6.0
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 1
+      maxUnavailable: 0
       maxSurge: 1
   selector:
     matchLabels:
@@ -27,28 +27,21 @@ spec:
         app: beewaf
         version: v6.0
       annotations:
-        # Filebeat autodiscover — collecte les logs JSON de ce pod
         co.elastic.logs/enabled: "true"
         co.elastic.logs/json.keys_under_root: "true"
         co.elastic.logs/json.add_error_key: "true"
     spec:
-      # Répartir les pods sur différents workers
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: app
-                  operator: In
-                  values:
-                  - beewaf
-              topologyKey: kubernetes.io/hostname
+      # Forcer le scheduling sur master1 (seul nœud avec l'image locale)
+      nodeName: testhamaster1
+      # Tolérer le taint control-plane pour pouvoir tourner sur un master
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
       containers:
       - name: beewaf
-        image: beewaf:latest
-        imagePullPolicy: IfNotPresent
+        image: docker.io/library/beewaf:latest
+        imagePullPolicy: Never
         ports:
         - name: http
           containerPort: 8000
@@ -80,19 +73,16 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 20
+          initialDelaySeconds: 60
           periodSeconds: 15
           timeoutSeconds: 5
-          failureThreshold: 3
+          failureThreshold: 5
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
           successThreshold: 1
-          failureThreshold: 3
-        # Les modèles ML sont pré-entraînés et baked dans l'image Docker
-        # (voir Dockerfile.k8s — étape builder exécute train_ml_models.py)
-        # Pas besoin de volume externe — tout est dans le conteneur
+          failureThreshold: 5
