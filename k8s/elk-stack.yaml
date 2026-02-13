@@ -160,7 +160,7 @@ data:
         json {
           source => "message"
           target => "beewaf"
-          skip_on_invalid_json => true
+          tag_on_failure => ["_jsonparsefailure_beewaf"]
         }
       }
 
@@ -206,7 +206,7 @@ data:
       }
 
       # ── 6. Enrichissement des événements bloqués ──
-      if [event_type] == "blocked" or [blocked] == true or [status_code] == 403 {
+      if [event_type] == "blocked" or [blocked] or [status_code] == 403 {
         mutate { add_tag => [ "security", "blocked" ] }
 
         # === Regex WAF Rules ===
@@ -294,7 +294,7 @@ data:
       }
 
       # ── 7. Marquer les requêtes légitimes ──
-      if [event_type] == "request" and [blocked] != true and [status_code] != 403 {
+      if [event_type] == "request" and ![blocked] and [status_code] != 403 {
         mutate { add_tag => [ "legitimate" ] }
         if ![attack_type] {
           mutate { add_field => { "attack_type" => "none" "attack_category" => "none" "severity" => "none" } }
