@@ -1,0 +1,2026 @@
+% ============================================================================
+%  BeeWAF Enterprise v6.0 — Cahier de Charge Complet
+%  Projet de Fin d'Études (PFE)
+%  Février 2026
+% ============================================================================
+\documentclass[12pt,a4paper,french]{report}
+
+% ----- Encodage et langue -----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+
+% ----- Mise en page -----
+\usepackage[top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ----- Polices -----
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ----- Couleurs et graphiques -----
+\usepackage[table,xcdraw,dvipsnames]{xcolor}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, fit}
+
+% ----- Tableaux -----
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{array}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+
+% ----- Code source -----
+\usepackage{listings}
+\usepackage{fancyvrb}
+
+% ----- Hyperliens -----
+\usepackage[hidelinks,colorlinks=true,linkcolor=NavyBlue,urlcolor=RoyalBlue,citecolor=ForestGreen]{hyperref}
+\usepackage{bookmark}
+
+% ----- En-têtes et pieds de page -----
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\leftmark}
+\fancyhead[R]{\small BeeWAF Enterprise v6.0}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.2pt}
+
+% ----- Listes -----
+\usepackage{enumitem}
+
+% ----- Divers -----
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{pdfpages}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+
+% ----- Couleurs personnalisées -----
+\definecolor{beeyellow}{HTML}{F5A623}
+\definecolor{beedark}{HTML}{2C3E50}
+\definecolor{beeblue}{HTML}{2980B9}
+\definecolor{beegreen}{HTML}{27AE60}
+\definecolor{beered}{HTML}{E74C3C}
+\definecolor{codebg}{HTML}{F8F8F8}
+\definecolor{codeframe}{HTML}{DDDDDD}
+
+% ----- Style listings -----
+\lstset{
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{beeblue}\bfseries,
+  commentstyle=\color{beegreen}\itshape,
+  stringstyle=\color{beered},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=8pt,
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=2,
+  captionpos=b,
+  xleftmargin=1em,
+  framexleftmargin=1em,
+}
+
+\lstdefinelanguage{yaml}{
+  keywords={true,false,null,y,n},
+  sensitive=false,
+  comment=[l]{\#},
+  morestring=[b]',
+  morestring=[b]",
+}
+
+\lstdefinelanguage{nginx}{
+  keywords={server,listen,location,proxy_pass,upstream,return,ssl_certificate,ssl_protocols,add_header,proxy_set_header,worker_processes,worker_connections},
+  sensitive=false,
+  comment=[l]{\#},
+  morestring=[b]',
+  morestring=[b]",
+}
+
+% ----- Boîtes colorées -----
+\newtcolorbox{infobox}[1][]{
+  colback=beeblue!5,
+  colframe=beeblue!80,
+  fonttitle=\bfseries,
+  title={#1},
+  breakable,
+  sharp corners,
+}
+
+\newtcolorbox{warnbox}[1][]{
+  colback=beeyellow!10,
+  colframe=beeyellow!80!black,
+  fonttitle=\bfseries,
+  title={#1},
+  breakable,
+  sharp corners,
+}
+
+\newtcolorbox{resultbox}[1][]{
+  colback=beegreen!5,
+  colframe=beegreen!80,
+  fonttitle=\bfseries,
+  title={#1},
+  breakable,
+  sharp corners,
+}
+
+% ============================================================================
+\begin{document}
+
+% ----- PAGE DE GARDE -----
+\begin{titlepage}
+\begin{center}
+
+\vspace*{1cm}
+
+{\Huge\bfseries\color{beedark} BeeWAF Enterprise v6.0}
+
+\vspace{0.5cm}
+
+{\LARGE\color{beeblue} Cahier de Charge Complet}
+
+\vspace{1.5cm}
+
+\begin{tikzpicture}
+  \node[draw=beeyellow, line width=3pt, rounded corners=15pt, inner sep=20pt, fill=beeyellow!10] {
+    \begin{minipage}{0.7\textwidth}
+    \centering
+    {\Large\bfseries Web Application Firewall Intelligent}\\[0.5em]
+    {\large 10\,041 Règles $\bullet$ 3 Modèles ML $\bullet$ 27 Modules}\\[0.3em]
+    {\large 7 Frameworks de Conformité}\\[0.3em]
+    {\large\color{beegreen}\bfseries Grade : A+ (100\% Tests)}
+    \end{minipage}
+  };
+\end{tikzpicture}
+
+\vspace{2cm}
+
+\begin{tabular}{rl}
+\textbf{Projet} & BeeWAF --- Web Application Firewall Intelligent \\
+\textbf{Version} & 6.0 (Février 2026) \\
+\textbf{Auteur} & Équipe BeeHive PFE \\
+\textbf{Classification} & Document Technique Complet \\
+\textbf{Dernière mise à jour} & 10 Février 2026 \\
+\end{tabular}
+
+\vfill
+
+{\small\color{gray} Document généré le 10 Février 2026\\
+BeeWAF Enterprise v6.0 --- Grade Fonctionnel : A+ (260/260 tests, 100\%)}
+
+\end{center}
+\end{titlepage}
+
+% ----- TABLE DES MATIÈRES -----
+\tableofcontents
+\newpage
+
+% ----- LISTE DES TABLEAUX -----
+\listoftables
+\newpage
+
+% ============================================================================
+% CHAPITRE 1 : INTRODUCTION & CONTEXTE
+% ============================================================================
+\chapter{Introduction \& Contexte}
+
+\section{Présentation du Projet}
+
+BeeWAF Enterprise est un \textbf{Web Application Firewall (WAF)} de nouvelle génération conçu pour fournir une protection de niveau entreprise contre les attaques web. Développé dans le cadre d'un Projet de Fin d'Études (PFE), il combine :
+
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Détection par règles regex} : 10\,041 patterns compilés couvrant 50+ catégories d'attaques
+  \item \textbf{Intelligence Artificielle} : Ensemble de 3 modèles ML (IsolationForest + RandomForest + GradientBoosting)
+  \item \textbf{27 modules de sécurité} spécialisés couvrant tous les vecteurs d'attaque modernes
+  \item \textbf{Conformité} à 7 frameworks de sécurité (OWASP, PCI DSS, GDPR, SOC2, NIST, ISO 27001, HIPAA)
+\end{itemize}
+
+\section{Positionnement}
+
+BeeWAF surpasse les solutions commerciales de référence :
+
+\begin{table}[H]
+\centering
+\caption{Comparaison BeeWAF vs solutions commerciales}
+\label{tab:positionnement}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Critère} & \textbf{BeeWAF v6.0} & \textbf{F5 BIG-IP ASM} & \textbf{ModSecurity CRS} \\
+\midrule
+Score de détection & \textbf{98.2/100} & 73/100 & 65/100 \\
+Grade & \textbf{A+} & B & C+ \\
+Faux Positifs & \textbf{0\%} & $\sim$5\% & $\sim$8\% \\
+Règles & \textbf{10\,041} & $\sim$2\,500 & $\sim$900 \\
+ML intégré & \textbf{Oui (3 modèles)} & Limité & Non \\
+Prix & \textbf{Open Source} & $\sim$\$15\,000/an & Gratuit \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Public Cible}
+
+\begin{itemize}[leftmargin=2em]
+  \item Entreprises nécessitant une protection WAF avancée
+  \item Équipes DevSecOps intégrant la sécurité dans le CI/CD
+  \item Organisations soumises à des réglementations (PCI DSS, GDPR, HIPAA)
+  \item Laboratoires de recherche en cybersécurité
+\end{itemize}
+
+
+% ============================================================================
+% CHAPITRE 2 : OBJECTIFS DU PROJET
+% ============================================================================
+\chapter{Objectifs du Projet}
+
+\section{Objectifs Fonctionnels}
+
+\begin{table}[H]
+\centering
+\caption{Objectifs fonctionnels}
+\label{tab:objectifs-fonctionnels}
+\small
+\begin{tabularx}{\textwidth}{@{}c L{8cm} c@{}}
+\toprule
+\textbf{ID} & \textbf{Objectif} & \textbf{Statut} \\
+\midrule
+OF-01 & Détecter $\geq$95\% des attaques web connues (OWASP Top 10) & \textcolor{beegreen}{\checkmark} 98.2\% \\
+OF-02 & Maintenir un taux de faux positifs $\leq$2\% & \textcolor{beegreen}{\checkmark} 0\% \\
+OF-03 & Supporter les protocoles HTTP/1.1 et HTTPS (TLS 1.2/1.3) & \textcolor{beegreen}{\checkmark} \\
+OF-04 & Fournir une API REST d'administration sécurisée & \textcolor{beegreen}{\checkmark} 14 endpoints \\
+OF-05 & Intégrer un moteur ML adaptatif auto-apprenant & \textcolor{beegreen}{\checkmark} 3 modèles \\
+OF-06 & Générer des logs structurés exploitables (ELK) & \textcolor{beegreen}{\checkmark} JSON \\
+OF-07 & Être déployable en conteneurs (Docker/K8s) & \textcolor{beegreen}{\checkmark} 6 services \\
+OF-08 & Couvrir $\geq$5 frameworks de conformité & \textcolor{beegreen}{\checkmark} 7 frameworks \\
+OF-09 & Protéger contre les attaques zero-day & \textcolor{beegreen}{\checkmark} 9 facteurs \\
+OF-10 & Supporter le mode clustering multi-n\oe{}uds & \textcolor{beegreen}{\checkmark} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Objectifs Non-Fonctionnels}
+
+\begin{table}[H]
+\centering
+\caption{Objectifs non-fonctionnels}
+\label{tab:objectifs-non-fonctionnels}
+\begin{tabular}{@{}clccc@{}}
+\toprule
+\textbf{ID} & \textbf{Objectif} & \textbf{Cible} & \textbf{Réalisé} & \textbf{Statut} \\
+\midrule
+ONF-01 & Latence de traitement & $\leq$50ms P99 & 18ms P99 & \textcolor{beegreen}{\checkmark} \\
+ONF-02 & Temps de détection d'attaque & $\leq$20ms & 11ms avg & \textcolor{beegreen}{\checkmark} \\
+ONF-03 & Disponibilité & 99.9\% & 99.9\% & \textcolor{beegreen}{\checkmark} \\
+ONF-04 & Consommation mémoire & $\leq$512 Mo & $<$512 Mo & \textcolor{beegreen}{\checkmark} \\
+ONF-05 & Démarrage à froid & $\leq$15s & $\sim$12s & \textcolor{beegreen}{\checkmark} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ============================================================================
+% CHAPITRE 3 : ARCHITECTURE GÉNÉRALE
+% ============================================================================
+\chapter{Architecture Générale}
+
+\section{Diagramme d'Architecture}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=5pt, minimum width=3cm, minimum height=1.2cm, font=\small, align=center},
+  arrow/.style={-{Stealth[length=6pt]}, thick},
+  node distance=1.5cm and 2cm
+]
+  % Client
+  \node[box, fill=gray!15] (client) {Client\\HTTPS};
+
+  % Nginx
+  \node[box, fill=beeblue!20, right=2cm of client] (nginx) {Nginx\\:80/:443\\TLS Termination};
+
+  % BeeWAF
+  \node[box, fill=beeyellow!25, right=2cm of nginx] (beewaf) {BeeWAF Core\\FastAPI :8000};
+
+  % Backend
+  \node[box, fill=beegreen!20, right=2cm of beewaf] (backend) {Backend\\Application};
+
+  % Modules inside BeeWAF
+  \node[box, fill=beeyellow!10, below=0.8cm of beewaf, minimum width=2.5cm] (modules) {27 Modules\\Sécurité};
+  \node[box, fill=beeyellow!10, below=0.5cm of modules, minimum width=2.5cm] (regex) {10\,041\\Règles Regex};
+  \node[box, fill=beeyellow!10, below=0.5cm of regex, minimum width=2.5cm] (ml) {ML Engine\\3 Modèles};
+
+  % ELK
+  \node[box, fill=Orchid!20, below=0.8cm of backend] (es) {Elasticsearch\\:9200};
+  \node[box, fill=Orchid!20, below=0.5cm of es] (kibana) {Kibana\\:5601};
+  \node[box, fill=Orchid!20, left=1.5cm of es] (logstash) {Logstash\\:5044};
+  \node[box, fill=Orchid!20, left=1.5cm of logstash] (filebeat) {Filebeat};
+
+  % Arrows
+  \draw[arrow] (client) -- (nginx);
+  \draw[arrow] (nginx) -- (beewaf);
+  \draw[arrow] (beewaf) -- (backend);
+  \draw[arrow, dashed, gray] (beewaf) -- (modules);
+  \draw[arrow, dashed, gray] (modules) -- (regex);
+  \draw[arrow, dashed, gray] (regex) -- (ml);
+  \draw[arrow, dashed, beeblue] (beewaf) -- node[right, font=\tiny]{logs JSON} (filebeat);
+  \draw[arrow, dashed, beeblue] (filebeat) -- (logstash);
+  \draw[arrow, dashed, beeblue] (logstash) -- (es);
+  \draw[arrow, dashed, beeblue] (es) -- (kibana);
+
+\end{tikzpicture}
+\caption{Architecture générale du cluster BeeWAF}
+\label{fig:architecture}
+\end{figure}
+
+\section{Flux de Traitement --- 36 Étapes Séquentielles}
+
+Le middleware WAF exécute les étapes suivantes dans l'ordre :
+
+\begin{enumerate}[leftmargin=2em]
+  \item IP Blacklist Check
+  \item Path Normalization (URL decode, \texttt{//}, \texttt{..})
+  \item Host Header Validation
+  \item Sensitive Path Blocking
+  \item X-Forwarded-For Spoof Detection
+  \item Negative ID Detection
+  \item Transfer-Encoding Smuggling
+  \item Range Header Validation
+  \item Business Logic Body Checks
+  \item Protocol Validator
+  \item Bot Detector / Bot Manager Advanced
+  \item DDoS Protection
+  \item Rate Limiting
+  \item Threat Intelligence
+  \item Threat Feed
+  \item Session Protection
+  \item API Security (JSON/XML/GraphQL)
+  \item Evasion Detector (18 couches de déobfuscation)
+  \item Correlation Engine
+  \item Adaptive Learning
+  \item Cookie Security
+  \item Virtual Patching (37 CVE)
+  \item Zero-Day Detector
+  \item WebSocket Inspector
+  \item Payload Analyzer
+  \item API Discovery
+  \item Header Validation (Referer, Cookie, X-*)
+  \item \textbf{Regex Rules Check (10\,041 patterns)}
+  \item \textbf{ML Engine Check (ensemble 3 modèles)}
+  \item DLP Scanning (Response)
+  \item Response Cloaking
+  \item Compliance Engine Logging
+  \item Prometheus Metrics Update
+  \item ELK Structured Logging
+  \item Geo-IP Enrichment
+  \item Cluster Sync
+\end{enumerate}
+
+\noindent Résultat : \textbf{403 Blocked} ou passage au backend.
+
+
+% ============================================================================
+% CHAPITRE 4 : STACK TECHNOLOGIQUE
+% ============================================================================
+\chapter{Stack Technologique}
+
+\section{Langages \& Frameworks}
+
+\begin{table}[H]
+\centering
+\caption{Stack technologique principale}
+\label{tab:stack}
+\begin{tabular}{@{}llc@{}}
+\toprule
+\textbf{Composant} & \textbf{Technologie} & \textbf{Version} \\
+\midrule
+Langage principal & Python & 3.11 \\
+Framework Web & FastAPI & $\geq$ 0.100.0 \\
+Serveur ASGI & Uvicorn & $\geq$ 0.22.0 \\
+Reverse Proxy & Nginx & 1.29.x (Alpine) \\
+Conteneurisation & Docker & 24+ \\
+Orchestration & Kubernetes & 1.28+ \\
+CI/CD & Jenkins & 2.x \\
+Logging & ELK Stack & 8.11.0 \\
+Monitoring & Prometheus & Compatible \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Bibliothèques Python}
+
+\begin{table}[H]
+\centering
+\caption{Dépendances Python}
+\label{tab:python-deps}
+\small
+\begin{tabularx}{\textwidth}{@{}llcX@{}}
+\toprule
+\textbf{Catégorie} & \textbf{Package} & \textbf{Version} & \textbf{Rôle} \\
+\midrule
+\multirow{4}{*}{\textbf{Core}} & \texttt{fastapi} & $\geq$ 0.100.0 & Framework API REST \\
+ & \texttt{uvicorn[standard]} & $\geq$ 0.22.0 & Serveur ASGI haute performance \\
+ & \texttt{python-multipart} & $\geq$ 0.0.6 & Parsing multipart/form-data \\
+ & \texttt{aiofiles} & $\geq$ 23.0.0 & I/O fichier asynchrone \\
+\midrule
+\multirow{2}{*}{\textbf{HTTP}} & \texttt{requests} & $\geq$ 2.31.0 & Client HTTP synchrone \\
+ & \texttt{httpx} & $\geq$ 0.24.0 & Client HTTP asynchrone \\
+\midrule
+\multirow{4}{*}{\textbf{ML}} & \texttt{numpy} & $\geq$ 1.24.0 & Calcul numérique \\
+ & \texttt{scipy} & $\geq$ 1.11.0 & Fonctions scientifiques \\
+ & \texttt{scikit-learn} & $\geq$ 1.3.0 & Algorithmes ML \\
+ & \texttt{joblib} & $\geq$ 1.3.0 & Sérialisation modèles \\
+\midrule
+\textbf{Monitoring} & \texttt{prometheus-client} & $\geq$ 0.17.0 & Métriques Prometheus \\
+\textbf{Logging} & \texttt{python-json-logger} & $\geq$ 2.0.7 & Logs JSON structurés \\
+\textbf{Optionnel} & \texttt{clamd} & $\geq$ 1.0.2 & Intégration ClamAV \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
+% ============================================================================
+% CHAPITRE 5 : MODULES DE SÉCURITÉ
+% ============================================================================
+\chapter{Modules de Sécurité (27 Modules)}
+
+\section{Tableau Récapitulatif}
+
+\begin{longtable}{@{}clllc@{}}
+\caption{Les 27 modules de sécurité de BeeWAF}
+\label{tab:modules}\\
+\toprule
+\textbf{\#} & \textbf{Module} & \textbf{Fichier} & \textbf{Description} & \textbf{Catégorie} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{\#} & \textbf{Module} & \textbf{Fichier} & \textbf{Description} & \textbf{Catégorie} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+1 & Rules Engine & rules.py + 15 & 10\,041 patterns regex & Détection \\
+2 & Anomaly Detector & anomaly.py & IsolationForest (legacy) & ML \\
+3 & ML Engine & ml\_engine.py & Ensemble 3 modèles & ML \\
+4 & Rate Limiter & ratelimit.py & Limitation débit + IP & Protection \\
+5 & Bot Detector & bot\_detector.py & Détection User-Agent & Détection \\
+6 & Bot Manager Adv. & bot\_manager*.py & JS Challenge, TLS FP & Détection \\
+7 & DLP & dlp.py & Prévention fuite données & Protection \\
+8 & Geo Block & geo\_block.py & Blocage géographique & Contrôle \\
+9 & Protocol Validator & protocol\_*.py & Validation HTTP stricte & Validation \\
+10 & API Security & api\_security.py & JSON/XML/GraphQL & Protection \\
+11 & Threat Intel & threat\_intel.py & Intelligence de menaces & Renseign. \\
+12 & Threat Feed & threat\_feed.py & Flux menaces externes & Renseign. \\
+13 & Session Protection & session\_*.py & Anti-hijacking, JWT & Session \\
+14 & Evasion Detector & evasion\_*.py & 18 couches déobfuscation & Détection \\
+15 & Correlation Engine & correlation\_*.py & Multi-événements & Analyse \\
+16 & Adaptive Learning & adaptive\_*.py & Modèle positif & ML \\
+17 & Response Cloaking & response\_*.py & Masquage headers & Protection \\
+18 & Cookie Security & cookie\_*.py & HMAC, altération & Session \\
+19 & Virtual Patching & virtual\_*.py & 37 patches CVE & Protection \\
+20 & Zero-Day Detector & zero\_day\_*.py & Anomalies 9 facteurs & ML \\
+21 & WebSocket Insp. & websocket\_*.py & Inspection WS & Détection \\
+22 & Payload Analyzer & payload\_*.py & Analyse payload & Détection \\
+23 & Compliance Engine & compliance\_*.py & 7 frameworks & Conformité \\
+24 & DDoS Protection & ddos\_*.py & Anti-DDoS (RPS) & Protection \\
+25 & API Discovery & api\_discovery.py & Shadow API & Découverte \\
+26 & Cluster Manager & cluster\_*.py & Multi-n\oe{}uds & Infra. \\
+27 & Performance Engine & performance\_*.py & Cache, bloom filter & Performance \\
+\end{longtable}
+
+\section{Détail des Modules Clés}
+
+\subsection{Bot Detector / Bot Manager Advanced}
+
+\begin{itemize}[leftmargin=2em]
+  \item Détection de 100+ User-Agents de scanners (SQLMap, Nikto, Nmap, Masscan, Acunetix, Burp Suite, etc.)
+  \item Détection User-Agent vide ou suspect
+  \item Challenge JavaScript (Bot Manager Advanced)
+  \item Fingerprint TLS / JA3
+  \item Détection credential stuffing (seuil : 5 tentatives/60s)
+  \item Classification : bon bot, mauvais bot, bot suspect
+\end{itemize}
+
+\subsection{DLP (Data Loss Prevention)}
+
+\textbf{Données protégées :}
+\begin{itemize}[leftmargin=2em]
+  \item Numéros de carte bancaire (Visa, Mastercard, Amex)
+  \item Numéros de sécurité sociale (SSN)
+  \item Adresses email
+  \item Numéros de téléphone
+  \item Données médicales (HIPAA)
+\end{itemize}
+
+\noindent\textbf{Mode :} Scan bidirectionnel (requête + réponse).
+
+\subsection{Evasion Detector --- 18 Couches de Déobfuscation}
+
+\begin{table}[H]
+\centering
+\caption{Les 18 couches de déobfuscation}
+\label{tab:evasion}
+\small
+\begin{tabular}{@{}cl@{}}
+\toprule
+\textbf{Couche} & \textbf{Technique} \\
+\midrule
+1 & URL Decoding (simple) \\
+2 & Double URL Decoding \\
+3 & Triple URL Decoding \\
+4 & HTML Entity Decoding \\
+5 & Unicode Normalization (NFD $\to$ NFC) \\
+6 & UTF-8 Overlong Decoding \\
+7 & Hex Escape Decoding (\texttt{\textbackslash x41}) \\
+8 & Octal Escape Decoding (\texttt{\textbackslash 101}) \\
+9 & Base64 Decoding \\
+10 & Mixed Case Normalization \\
+11 & Null Byte Removal \\
+12 & Comment Stripping (\texttt{/* */}, \texttt{//}, \texttt{-{}-}) \\
+13 & Whitespace Normalization \\
+14 & Backslash Normalization \\
+15 & Tab/Newline Removal \\
+16 & Full-Width Character Normalization \\
+17 & IIS-specific Decoding (\texttt{\%u00XX}) \\
+18 & Path Canonicalization \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Virtual Patching --- 37 CVE Couverts}
+
+\begin{table}[H]
+\centering
+\caption{Principaux CVE couverts par Virtual Patching}
+\label{tab:cve}
+\small
+\begin{tabular}{@{}llc@{}}
+\toprule
+\textbf{CVE} & \textbf{Nom} & \textbf{Sévérité} \\
+\midrule
+CVE-2021-44228 & Log4Shell (Log4j) & Critique \\
+CVE-2017-5638 & Apache Struts2 RCE & Critique \\
+CVE-2022-22965 & Spring4Shell & Critique \\
+CVE-2021-26855 & ProxyLogon (Exchange) & Critique \\
+CVE-2021-34473 & ProxyShell & Critique \\
+CVE-2023-34362 & MOVEit Transfer SQLi & Critique \\
+CVE-2023-44228 & Apache ActiveMQ RCE & Critique \\
+CVE-2024-3400 & PAN-OS GlobalProtect & Critique \\
+CVE-2023-46747 & F5 BIG-IP Auth Bypass & Critique \\
+CVE-2021-41773 & Apache Path Traversal & Haute \\
+\multicolumn{3}{c}{\emph{+ 27 autres CVE de sévérité Haute/Critique}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Correlation Engine}
+
+\textbf{Chaînes d'attaques détectées :}
+\begin{itemize}[leftmargin=2em]
+  \item Reconnaissance $\to$ Exploitation $\to$ Exfiltration
+  \item Scanner probe $\to$ Info disclosure $\to$ Data extraction
+  \item Brute force $\to$ Auth bypass $\to$ Privilege escalation
+  \item XSS $\to$ Session hijacking $\to$ Account takeover
+  \item SQLi $\to$ Data extraction $\to$ Command execution
+  \item GraphQL introspection $\to$ Scanner probe
+  \item SSRF $\to$ Cloud metadata $\to$ Credential theft
+\end{itemize}
+
+\subsection{DDoS Protection}
+
+\begin{table}[H]
+\centering
+\caption{Seuils de protection DDoS}
+\label{tab:ddos}
+\begin{tabular}{@{}lc@{}}
+\toprule
+\textbf{Paramètre} & \textbf{Seuil} \\
+\midrule
+Avertissement RPS & 500 req/s \\
+Throttling RPS & 800 req/s \\
+Blocage RPS & 1\,000 req/s \\
+Max connexions/IP & 100\,000 \\
+Fenêtre d'analyse & 60 secondes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cookie Security}
+
+\begin{itemize}[leftmargin=2em]
+  \item Inspection des valeurs de cookies pour SQLi/XSS
+  \item Détection d'altération de cookies de session
+  \item Vérification HMAC pour intégrité
+  \item Détection de fixation de session
+\end{itemize}
+
+
+% ============================================================================
+% CHAPITRE 6 : MOTEUR DE RÈGLES REGEX
+% ============================================================================
+\chapter{Moteur de Règles Regex (10\,041 Règles)}
+
+\section{Architecture des Fichiers de Règles}
+
+\begin{table}[H]
+\centering
+\caption{Distribution des règles par fichier}
+\label{tab:rules-files}
+\small
+\begin{tabular}{@{}llr@{}}
+\toprule
+\textbf{Fichier} & \textbf{Catégories} & \textbf{Nombre} \\
+\midrule
+rules.py (base) & SQLi, XSS, CMDi, Path Traversal, SSRF & $\sim$287 \\
+rules\_extended.py & 26 catégories avancées & 586 \\
+rules\_advanced.py & 13 catégories (cloud, k8s, OAuth) & 425 \\
+rules\_v5.py & 31 nouvelles catégories & 1\,207 \\
+rules\_mega\_1.py & Deep SQLi, Deep XSS & 1\,120 \\
+rules\_mega\_2.py & CMS, Framework attacks & 542 \\
+rules\_mega\_3.py & Encoding evasion deep & 412 \\
+rules\_mega\_4.py & Emerging threats & 292 \\
+rules\_mega\_5.py & Protocol attacks & 313 \\
+rules\_mega\_6.py & Infrastructure/cloud deep & 214 \\
+rules\_mega\_7.py & Scanner fingerprints, SSTI deep & 1\,091 \\
+rules\_mega\_8.py & API endpoint, miscellaneous & 1\,161 \\
+rules\_mega\_9.py & Advanced patterns & 887 \\
+rules\_mega\_10.py & Extended coverage & 776 \\
+rules\_mega\_11.py & Specialized attacks & 576 \\
+rules\_mega\_12.py & Final coverage & 152 \\
+\midrule
+\textbf{TOTAL} & & \textbf{10\,041} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Catégories d'Attaques Couvertes (50+)}
+
+\begin{longtable}{@{}L{3.5cm}L{11cm}@{}}
+\caption{Catégories d'attaques et sous-types}
+\label{tab:attack-categories}\\
+\toprule
+\textbf{Catégorie} & \textbf{Sous-types} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Catégorie} & \textbf{Sous-types} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+SQL Injection & UNION-based, Blind (Boolean/Time), Error-based, Stacked queries, Hex encoding, Unicode, Information Schema, Out-of-band \\
+XSS & Reflected, Stored, DOM-based, SVG, Data URI, Event handlers, JSFuck, Polyglot \\
+Command Injection & Semicolon, Pipe, Backtick, Dollar substitution, Wget/Curl, Python/Perl/Ruby \\
+Path Traversal & Basic (\texttt{../}), URL-encoded, Double-encoded, Windows, Unicode, Overlong UTF-8 \\
+SSRF & AWS IMDSv1/v2, GCP Metadata, Azure IMDS, K8s API, Docker socket, DNS rebind, IPv6 \\
+XXE & Entity injection, DOCTYPE, Parameter entity, Billion laughs, Out-of-band \\
+SSTI & Jinja2, Twig, Freemarker, Thymeleaf, Velocity, Pebble, Smarty \\
+Deserialization & Java (ObjectInputStream), PHP (unserialize), Python (pickle), .NET, YAML, Ruby \\
+LDAP Injection & OR injection, Filter manipulation, Wildcard exploitation \\
+NoSQL Injection & MongoDB \$ne/\$gt/\$regex/\$where, Aggregation pipeline \\
+XPath Injection & Boolean-based, Error-based \\
+GraphQL & Introspection, Depth attacks, Batch queries, Aliases \\
+JWT Attacks & alg:none, Key confusion, Claim manipulation \\
+CRLF Injection & Header injection, HTTP response splitting \\
+Open Redirect & URL parameter manipulation \\
+CSV/Formula Inj. & DDE injection, =CMD() \\
+Prototype Pollution & \texttt{\_\_proto\_\_}, \texttt{constructor.prototype} \\
+File Upload & PHP webshell, JSP shell, Double extension, Polyglot \\
+CMS Attacks & WordPress, Joomla, Drupal, Magento \\
+Cloud/K8s & AWS, GCP, Azure, Kubernetes secrets/API \\
+CI/CD & Jenkins, GitLab CI, GitHub Actions \\
+Encoding Evasion & Double encoding, Unicode tricks, Hex, Overlong UTF-8 \\
+WAF Bypass & Obfuscation, Alternative encodings, Comment insertion \\
+Scanner Fingerprints & 200+ outils de scan reconnus \\
+\end{longtable}
+
+\section{Compilation \& Optimisation}
+
+\begin{lstlisting}[language=Python, caption={Compilation des règles au démarrage}]
+# Toutes les règles sont pré-compilées au démarrage
+COMPILED_RULES: List[Tuple[re.Pattern, str]] = []
+
+# Chaque pattern est compilé avec re.IGNORECASE
+for regex_str, category in all_patterns:
+    COMPILED_RULES.append(
+        (re.compile(regex_str, re.IGNORECASE), category.lower())
+    )
+\end{lstlisting}
+
+\textbf{Optimisations :}
+\begin{itemize}[leftmargin=2em]
+  \item Cache LRU pour les patterns fréquemment matchés
+  \item Bloom filter pour pré-screening des requêtes sûres
+  \item Déduplication des requêtes identiques
+  \item Short-circuit : arrêt au premier match
+\end{itemize}
+
+\section{API Publique}
+
+\begin{lstlisting}[language=Python, caption={API du moteur de règles}]
+def check_regex_rules(path: str, body: str,
+                      headers: Dict) -> Tuple[bool, str]:
+    """
+    Vérifie une requête contre les 10 041 règles regex.
+    Returns: (is_blocked, rule_category)
+    """
+
+def list_rules() -> List[Tuple[str, str]]:
+    """Retourne toutes les règles: [(pattern, category), ...]"""
+\end{lstlisting}
+
+
+% ============================================================================
+% CHAPITRE 7 : MOTEUR ML — INTELLIGENCE ARTIFICIELLE
+% ============================================================================
+\chapter{Moteur ML --- Intelligence Artificielle}
+
+\section{Architecture de l'Ensemble}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=3pt, minimum width=2.8cm, minimum height=1cm, font=\small, align=center},
+  arrow/.style={-{Stealth[length=5pt]}, thick},
+  node distance=1cm and 1.5cm
+]
+  \node[box, fill=gray!10] (input) {Requête HTTP};
+  \node[box, fill=beeblue!15, below=0.8cm of input, minimum width=10cm] (features) {Feature Extractor\\(35 features)};
+
+  \node[box, fill=beered!15, below left=1.2cm and 1.5cm of features] (if) {IsolationForest\\Poids : 0.10};
+  \node[box, fill=beegreen!15, below=1.2cm of features] (rf) {RandomForest\\Poids : 0.45};
+  \node[box, fill=beeblue!15, below right=1.2cm and 1.5cm of features] (gb) {GradientBoosting\\Poids : 0.45};
+
+  \node[box, fill=beeyellow!25, below=1.2cm of rf, minimum width=8cm] (ensemble) {Score Pondéré = $\sum$(weight $\times$ prediction)\\Si score $> 0.6$ $\to$ \textbf{ATTAQUE DÉTECTÉE}};
+
+  \draw[arrow] (input) -- (features);
+  \draw[arrow] (features) -- (if);
+  \draw[arrow] (features) -- (rf);
+  \draw[arrow] (features) -- (gb);
+  \draw[arrow] (if) -- (ensemble);
+  \draw[arrow] (rf) -- (ensemble);
+  \draw[arrow] (gb) -- (ensemble);
+\end{tikzpicture}
+\caption{Architecture de l'ensemble ML à 3 modèles}
+\label{fig:ml-ensemble}
+\end{figure}
+
+\section{Modèles ML}
+
+\begin{table}[H]
+\centering
+\caption{Performance des modèles ML}
+\label{tab:ml-models}
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+\textbf{Modèle} & \textbf{Algorithme} & \textbf{Poids} & \textbf{Accuracy} & \textbf{F1} & \textbf{ROC-AUC} \\
+\midrule
+Model 1 & IsolationForest & 0.10 & 77.3\% & 0.724 & --- \\
+Model 2 & RandomForest & 0.45 & 94.2\% & 0.932 & 0.992 \\
+Model 3 & GradientBoosting & 0.45 & 95.3\% & 0.943 & 0.993 \\
+\midrule
+\textbf{Ensemble} & \textbf{Weighted Average} & \textbf{1.00} & \textbf{96.8\%} & \textbf{0.954} & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Extraction de Features (35 Features)}
+
+\subsection{Groupe 1 --- Longueur (6 features)}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Feature} & \textbf{Description} \\
+\midrule
+\texttt{url\_length} & Longueur totale de l'URL \\
+\texttt{path\_length} & Longueur du chemin \\
+\texttt{query\_length} & Longueur de la query string \\
+\texttt{body\_length} & Longueur du body \\
+\texttt{header\_count} & Nombre de headers HTTP \\
+\texttt{cookie\_length} & Longueur totale des cookies \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Groupe 2 --- Distribution de Caractères (8 features)}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Feature} & \textbf{Description} \\
+\midrule
+\texttt{special\_char\_count} & Nombre de caractères spéciaux \\
+\texttt{special\_char\_ratio} & Ratio caractères spéciaux / total \\
+\texttt{dangerous\_char\_score} & Score pondéré des chars dangereux (\texttt{'}, \texttt{"}, \texttt{<}, \texttt{>}, \texttt{;}) \\
+\texttt{uppercase\_ratio} & Ratio majuscules \\
+\texttt{digit\_ratio} & Ratio chiffres \\
+\texttt{non\_ascii\_count} & Nombre de caractères non-ASCII \\
+\texttt{max\_char\_repeat} & Plus longue répétition d'un caractère \\
+\texttt{entropy} & Entropie de Shannon de la requête \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Groupe 3 --- Mots-clés (5 features)}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Feature} & \textbf{Description} \\
+\midrule
+\texttt{sql\_keyword\_count} & Nombre de mots-clés SQL (SELECT, UNION, etc.) \\
+\texttt{xss\_keyword\_count} & Nombre de mots-clés XSS (script, alert, etc.) \\
+\texttt{cmd\_keyword\_count} & Nombre de mots-clés commande (cat, wget, etc.) \\
+\texttt{path\_traversal\_count} & Nombre de séquences \texttt{../} \\
+\texttt{ssrf\_keyword\_count} & Nombre de mots-clés SSRF (169.254, metadata, etc.) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Groupe 4 --- Encodage (4 features)}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Feature} & \textbf{Description} \\
+\midrule
+\texttt{url\_encoding\_count} & Nombre de séquences \%XX \\
+\texttt{double\_encoding\_count} & Nombre de double-encodages \%25XX \\
+\texttt{hex\_encoding\_count} & Nombre de séquences \texttt{\textbackslash xXX} ou \texttt{0xXX} \\
+\texttt{unicode\_encoding\_count} & Nombre de séquences \texttt{\textbackslash uXXXX} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Groupe 5 --- Structure (7 features)}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Feature} & \textbf{Description} \\
+\midrule
+\texttt{param\_count} & Nombre de paramètres query/body \\
+\texttt{nested\_bracket\_depth} & Profondeur d'imbrication des parenthèses/crochets \\
+\texttt{comment\_patterns} & Nombre de patterns de commentaires \\
+\texttt{null\_byte\_count} & Nombre de null bytes (\%00) \\
+\texttt{whitespace\_anomaly} & Score d'anomalie des espaces \\
+\texttt{method\_encoded} & Méthode HTTP encodée (booléen) \\
+\texttt{suspicious\_extension} & Extension de fichier suspecte \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Groupe 6 --- Contexte (5 features)}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Feature} & \textbf{Description} \\
+\midrule
+\texttt{has\_valid\_tld} & URL contient un TLD valide \\
+\texttt{path\_depth} & Profondeur du chemin (nombre de /) \\
+\texttt{query\_key\_anomaly} & Anomalie dans les noms de paramètres \\
+\texttt{body\_is\_json} & Body est du JSON valide \\
+\texttt{mixed\_case\_keywords} & Présence de mots-clés en casse mixte \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Pré-filtrage Intelligent}
+
+Avant l'inférence ML (coûteuse), un pré-filtre identifie les requêtes évidemment sûres :
+
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{JSON valide} sans mots-clés d'attaque $\to$ SAFE
+  \item \textbf{Patterns dangereux} (\texttt{<}, \texttt{>}, \texttt{;}, \texttt{|}, etc.) $\to$ ANALYZE
+  \item \textbf{Mots dangereux} (script, alert) avec \emph{word boundaries} $\to$ ANALYZE
+  \item \textbf{Contexte SQL} (SELECT + FROM, UNION + SELECT) $\to$ ANALYZE
+  \item \textbf{Apostrophes en contexte SQL} (\texttt{' OR}, \texttt{' AND}, \texttt{'='='}) $\to$ ANALYZE
+  \item \textbf{Extensions statiques} (.html, .css, .js, .png, .jpg) $\to$ SAFE
+  \item \textbf{Chemins simples} ($<$100 chars, $\leq$5 niveaux) $\to$ SAFE
+  \item \textbf{Query params simples} (alphanumérique + \texttt{=\&\_-+.\%,:}) $\to$ SAFE
+\end{enumerate}
+
+\section{Détermination du Type d'Attaque}
+
+En cas de détection, le système classifie automatiquement :
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Label} & \textbf{Type d'attaque} \\
+\midrule
+\texttt{sqli} & Injection SQL \\
+\texttt{xss} & Cross-Site Scripting \\
+\texttt{cmdi} & Injection de commande \\
+\texttt{path\_traversal} & Traversée de répertoire \\
+\texttt{ssrf} & Server-Side Request Forgery \\
+\texttt{injection} & Injection générique \\
+\texttt{suspicious} & Activité suspecte \\
+\texttt{anomaly} & Anomalie non classifiée \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Données d'Entraînement}
+
+\begin{table}[H]
+\centering
+\caption{Jeux de données d'entraînement}
+\label{tab:datasets}
+\begin{tabular}{@{}llcl@{}}
+\toprule
+\textbf{Dataset} & \textbf{Fichier} & \textbf{Taille} & \textbf{Usage} \\
+\midrule
+CSIC 2010 & csic\_database.csv & $\sim$61\,065 éch. & Entraînement principal ML \\
+Train Demo & train\_demo.csv & Petit & Demo/test anomaly legacy \\
+Train Kaggle & train\_kaggle.csv & Variable & Enrichissement \\
+Train Synthetic & train\_synthetic.csv & Variable & Données synthétiques \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{Split :} 80\% train / 20\% test \\
+\textbf{Attack ratio :} $\sim$41\% des échantillons sont des attaques
+
+\section{Persistance des Modèles}
+
+\begin{lstlisting}[language=bash, caption={Structure des fichiers modèles}]
+models/
+  anomaly_model.pkl    # Legacy IsolationForest (via pickle)
+  ml_model.pkl         # Ensemble 3 modeles (via joblib/pickle)
+\end{lstlisting}
+
+
+% ============================================================================
+% CHAPITRE 8 : PIPELINE DE TRAITEMENT DES REQUÊTES
+% ============================================================================
+\chapter{Pipeline de Traitement des Requêtes}
+
+\section{Middleware WAF --- Ordre d'Exécution}
+
+\begin{lstlisting}[language=Python, caption={Point d'entrée du middleware WAF}]
+@app.middleware("http")
+async def waf_middleware(request: Request, call_next):
+\end{lstlisting}
+
+Le traitement s'organise en 7 phases :
+
+\begin{description}[leftmargin=2em]
+  \item[Phase 1 --- Pré-validation :] Extraction IP, path, method, headers, body ; incrémentation compteur Prometheus ; vérification IP blacklist ; normalisation du path.
+  \item[Phase 2 --- Validation d'en-têtes :] Host header, chemins sensibles, X-Forwarded-For, ID négatifs, Transfer-Encoding smuggling, Range header.
+  \item[Phase 3 --- Logique métier :] Password reset IDOR, quantity abuse.
+  \item[Phase 4 --- Modules enterprise :] 16 modules spécialisés (Protocol Validator $\to$ API Discovery).
+  \item[Phase 5 --- Header scanning :] Scan des headers sélectifs (Referer, Cookie, X-Original-URL).
+  \item[Phase 6 --- Détection principale :] Regex Rules Engine (10\,041 patterns) puis ML Engine (ensemble 3 modèles).
+  \item[Phase 7 --- Post-traitement :] Passage au backend, DLP Response Scanning, Response Cloaking, Logging ELK, Métriques Prometheus, Compliance Engine audit.
+\end{description}
+
+\section{Format de Réponse de Blocage}
+
+\begin{lstlisting}[language=Python, caption={Format JSON de blocage}]
+{
+    "blocked": true,
+    "reason": "regex-sqli"
+}
+\end{lstlisting}
+
+\textbf{Catégories de blocage :}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Préfixe} & \textbf{Description} \\
+\midrule
+\texttt{regex-\{category\}} & Détecté par une règle regex \\
+\texttt{ml-\{attack\_type\}} & Détecté par le moteur ML \\
+\texttt{bot-detected} & Bot malveillant \\
+\texttt{rate-limited} & Dépassement de seuil \\
+\texttt{ddos-detected} & Attaque DDoS \\
+\texttt{ip-blocked} & IP en liste noire \\
+\texttt{virtual-patch-\{cve\}} & Patch virtuel CVE \\
+\texttt{business-logic-\{type\}} & Règle logique métier \\
+\texttt{sensitive-path} & Chemin sensible bloqué \\
+\texttt{xff-spoof} & Spoofing X-Forwarded-For \\
+\texttt{negative-id} & ID négatif dans URL \\
+\texttt{te-smuggling} & Smuggling Transfer-Encoding \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ============================================================================
+% CHAPITRE 9 : API REST & ENDPOINTS
+% ============================================================================
+\chapter{API REST \& Endpoints}
+
+\section{Endpoints Publics}
+
+\begin{table}[H]
+\centering
+\caption{Endpoints publics}
+\label{tab:endpoints-public}
+\begin{tabularx}{\textwidth}{@{}llX@{}}
+\toprule
+\textbf{Méthode} & \textbf{Chemin} & \textbf{Description} \\
+\midrule
+\texttt{GET} & \texttt{/} & Information du service (version, modules, rules\_count, ml\_mode, compliance) \\
+\texttt{GET} & \texttt{/health} & Vérification santé (status, ml\_engine\_trained, rules\_count) \\
+\texttt{GET} & \texttt{/metrics} & Métriques Prometheus (text/plain) \\
+\texttt{POST} & \texttt{/echo} & Echo (test WAF traversal) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Endpoints Admin (API Key requise)}
+
+\begin{table}[H]
+\centering
+\caption{Endpoints d'administration}
+\label{tab:endpoints-admin}
+\small
+\begin{tabularx}{\textwidth}{@{}llX@{}}
+\toprule
+\textbf{Méthode} & \textbf{Chemin} & \textbf{Description} \\
+\midrule
+\texttt{GET} & \texttt{/admin/rules} & Liste toutes les règles compilées \\
+\texttt{GET} & \texttt{/admin/ml-stats} & Statistiques ML : modèles, accuracy, weights \\
+\texttt{POST} & \texttt{/admin/ml-predict} & Test de prédiction ML sur un payload \\
+\texttt{POST} & \texttt{/admin/retrain} & Réentraîner le modèle anomaly legacy \\
+\texttt{POST} & \texttt{/admin/retrain-ml} & Réentraîner l'ensemble ML depuis CSIC \\
+\texttt{GET} & \texttt{/admin/enterprise-stats} & Stats de tous les 27 modules \\
+\texttt{GET} & \texttt{/admin/compliance} & Rapport de conformité 7 frameworks \\
+\texttt{GET} & \texttt{/admin/virtual-patches} & Liste des 37 patches virtuels \\
+\texttt{GET} & \texttt{/admin/correlation} & Stats corrélation + campagnes actives \\
+\texttt{POST} & \texttt{/admin/adaptive-mode} & Changer le mode : learning/detect/enforce \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Authentification API}
+
+\begin{lstlisting}[language=bash, caption={En-tête d'authentification}]
+Header: X-API-Key: <cle>
+Variable: BEEWAF_API_KEY (defaut: changeme-default-key-not-secure)
+\end{lstlisting}
+
+\begin{itemize}[leftmargin=2em]
+  \item Clé invalide $\to$ \texttt{403 Forbidden}
+  \item Clé absente $\to$ \texttt{401 Unauthorized}
+\end{itemize}
+
+
+% ============================================================================
+% CHAPITRE 10 : INFRASTRUCTURE DOCKER
+% ============================================================================
+\chapter{Infrastructure Docker}
+
+\section{Fichiers Docker}
+
+\begin{table}[H]
+\centering
+\caption{Fichiers Docker disponibles}
+\label{tab:dockerfiles}
+\begin{tabularx}{\textwidth}{@{}llX@{}}
+\toprule
+\textbf{Fichier} & \textbf{Image de Base} & \textbf{Usage} \\
+\midrule
+Dockerfile & python:3.11-slim & Build avec ClamAV \\
+\textbf{Dockerfile.full} & \textbf{python:3.11-slim} & \textbf{Build complet (principal)} \\
+Dockerfile.runtime & python:3.11-slim & Build léger production \\
+Dockerfile.final & python:3.11-slim & Build runtime avec ClamAV \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Services Docker Compose (6 conteneurs)}
+
+\begin{table}[H]
+\centering
+\caption{Services Docker Compose}
+\label{tab:docker-services}
+\begin{tabular}{@{}lllll@{}}
+\toprule
+\textbf{Service} & \textbf{Image} & \textbf{Container} & \textbf{Ports} & \textbf{Ressources} \\
+\midrule
+beewaf & beewaf:sklearn & beewaf\_sklearn & 8000 (expose) & --- \\
+nginx & nginx:alpine & beewaf\_nginx & 80, 443 & --- \\
+elasticsearch & ES 8.11.0 & beewaf\_elasticsearch & 9200 & 1\,Go heap \\
+logstash & LS 8.11.0 & beewaf\_logstash & 5044, 9600 & 256\,Mo heap \\
+kibana & Kibana 8.11.0 & beewaf\_kibana & 5601 & --- \\
+filebeat & FB 8.11.0 & beewaf\_filebeat & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Commandes de Déploiement}
+
+\begin{lstlisting}[language=bash, caption={Commandes Docker de déploiement}]
+# Build
+docker build -f Dockerfile.full -t beewaf:sklearn .
+
+# Demarrage complet (6 services)
+docker-compose -f docker-compose-elk.yaml up -d
+
+# Rebuild WAF uniquement
+docker-compose -f docker-compose-elk.yaml up -d \
+    --force-recreate beewaf
+
+# Logs
+docker logs -f beewaf_sklearn
+\end{lstlisting}
+
+
+% ============================================================================
+% CHAPITRE 11 : CONFIGURATION NGINX
+% ============================================================================
+\chapter{Configuration Nginx (Reverse Proxy)}
+
+\section{Paramètres Généraux}
+
+\begin{lstlisting}[language=nginx, caption={Configuration Nginx générale}]
+worker_processes  1;
+worker_connections  1024;
+\end{lstlisting}
+
+\section{Redirection HTTP $\to$ HTTPS}
+
+\begin{lstlisting}[language=nginx, caption={Redirection HTTP vers HTTPS}]
+server {
+    listen 80;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+\end{lstlisting}
+
+\section{Configuration HTTPS}
+
+\begin{table}[H]
+\centering
+\caption{Paramètres TLS/SSL}
+\label{tab:tls-config}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Paramètre} & \textbf{Valeur} \\
+\midrule
+Port & 443 (SSL) \\
+Certificat & \texttt{/etc/nginx/ssl/tls.crt} \\
+Clé privée & \texttt{/etc/nginx/ssl/tls.key} \\
+Protocoles & TLSv1.2, TLSv1.3 \\
+Chiffrement & ECDHE-* (Perfect Forward Secrecy) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Headers de Sécurité (Nginx)}
+
+\begin{table}[H]
+\centering
+\caption{Headers de sécurité ajoutés par Nginx}
+\label{tab:nginx-headers}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Header} & \textbf{Valeur} \\
+\midrule
+\texttt{X-Frame-Options} & \texttt{DENY} \\
+\texttt{X-Content-Type-Options} & \texttt{nosniff} \\
+\texttt{X-XSS-Protection} & \texttt{1; mode=block} \\
+\texttt{Strict-Transport-Security} & \texttt{max-age=31536000; includeSubDomains} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Proxy Pass}
+
+\begin{lstlisting}[language=nginx, caption={Configuration du reverse proxy Nginx}]
+upstream beewaf {
+    server beewaf_sklearn:8000;
+}
+
+location / {
+    proxy_pass http://beewaf;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For
+        $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+\end{lstlisting}
+
+
+% ============================================================================
+% CHAPITRE 12 : STACK ELK
+% ============================================================================
+\chapter{Stack ELK (Logging \& Monitoring)}
+
+\section{Architecture de Logging}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=3pt, minimum width=3.5cm, minimum height=1cm, font=\small, align=center},
+  arrow/.style={-{Stealth[length=5pt]}, thick},
+  node distance=1.2cm
+]
+  \node[box, fill=beeyellow!20] (waf) {BeeWAF\\(JSON logs)};
+  \node[box, fill=Orchid!15, below=of waf] (fb) {Filebeat\\(collecte Docker)};
+  \node[box, fill=Orchid!15, below=of fb] (ls) {Logstash\\(parsing + enrichissement)};
+  \node[box, fill=Orchid!15, below=of ls] (es) {Elasticsearch\\(stockage indexé)};
+  \node[box, fill=Orchid!15, below=of es] (kb) {Kibana\\(visualisation)};
+
+  \draw[arrow] (waf) -- (fb);
+  \draw[arrow] (fb) -- node[right, font=\scriptsize]{filtre: beewaf\_sklearn} (ls);
+  \draw[arrow] (ls) -- node[right, font=\scriptsize]{index: beewaf-logs-YYYY.MM.dd} (es);
+  \draw[arrow] (es) -- (kb);
+\end{tikzpicture}
+\caption{Pipeline de logging ELK}
+\label{fig:elk-pipeline}
+\end{figure}
+
+\section{Pipeline Logstash}
+
+\begin{table}[H]
+\centering
+\caption{Étapes du pipeline Logstash}
+\label{tab:logstash-pipeline}
+\begin{tabularx}{\textwidth}{@{}cX@{}}
+\toprule
+\textbf{Étape} & \textbf{Action} \\
+\midrule
+1 & Filtrage : suppression logs non-BeeWAF \\
+2 & Suppression : logs d'accès Uvicorn \\
+3 & Parsing JSON du champ \texttt{message} \\
+4 & Renommage : \texttt{client\_ip}, \texttt{method}, \texttt{path}, \texttt{status\_code}, \texttt{blocked}, \texttt{block\_reason}, \texttt{latency\_ms}, \texttt{body\_preview}, \texttt{user\_agent} \\
+5 & Enrichissement : tags d'attaque basés sur \texttt{block\_reason} \\
+6 & Nettoyage : suppression métadonnées Filebeat \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Index Elasticsearch}
+
+\begin{infobox}[Champs indexés]
+\texttt{@timestamp}, \texttt{app\_timestamp}, \texttt{client\_ip}, \texttt{method}, \texttt{path}, \texttt{status\_code}, \texttt{blocked}, \texttt{block\_reason}, \texttt{latency\_ms}, \texttt{body\_preview}, \texttt{user\_agent}, \texttt{service}, \texttt{tags}
+\end{infobox}
+
+
+% ============================================================================
+% CHAPITRE 13 : MÉTRIQUES PROMETHEUS
+% ============================================================================
+\chapter{Métriques Prometheus}
+
+\section{Métriques Exposées}
+
+\begin{table}[H]
+\centering
+\caption{Métriques Prometheus exposées par BeeWAF}
+\label{tab:prometheus}
+\begin{tabularx}{\textwidth}{@{}llcX@{}}
+\toprule
+\textbf{Métrique} & \textbf{Type} & \textbf{Labels} & \textbf{Description} \\
+\midrule
+\texttt{beewaf\_requests\_total} & Counter & --- & Total de requêtes HTTP \\
+\texttt{beewaf\_blocked\_total} & Counter & \texttt{reason} & Total bloquées par catégorie \\
+\texttt{beewaf\_request\_latency\_seconds} & Histogram & --- & Distribution de la latence \\
+\texttt{beewaf\_active\_requests} & Gauge & --- & Requêtes en cours \\
+\texttt{beewaf\_rules\_count} & Gauge & --- & Nombre de règles chargées \\
+\texttt{beewaf\_model\_loaded} & Gauge & --- & Statut modèle ML (0/1) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Endpoint}
+
+\begin{lstlisting}[language=bash, caption={Endpoint Prometheus}]
+GET /metrics
+Content-Type: text/plain; version=0.0.4
+\end{lstlisting}
+
+
+% ============================================================================
+% CHAPITRE 14 : KUBERNETES
+% ============================================================================
+\chapter{Kubernetes (Orchestration)}
+
+\section{Deployment}
+
+\begin{lstlisting}[language=yaml, caption={Extrait du Deployment Kubernetes}]
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beewaf
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: beewaf
+          image: beewaf:latest
+          ports:
+            - containerPort: 8000
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+\end{lstlisting}
+
+\section{Service}
+
+\begin{lstlisting}[language=yaml, caption={Service Kubernetes}]
+apiVersion: v1
+kind: Service
+metadata:
+  name: beewaf-svc
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+\end{lstlisting}
+
+\section{Ingress (TLS)}
+
+\begin{lstlisting}[language=yaml, caption={Ingress Kubernetes avec TLS}]
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: beewaf-ingress
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["beewaf.local"]
+      secretName: beewaf-tls-secret
+  rules:
+    - host: beewaf.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: beewaf-svc
+                port: { number: 80 }
+\end{lstlisting}
+
+
+% ============================================================================
+% CHAPITRE 15 : CI/CD — PIPELINE JENKINS
+% ============================================================================
+\chapter{CI/CD --- Pipeline Jenkins}
+
+\section{Stages du Pipeline}
+
+\begin{table}[H]
+\centering
+\caption{Stages du pipeline Jenkins}
+\label{tab:jenkins}
+\begin{tabularx}{\textwidth}{@{}clX@{}}
+\toprule
+\textbf{\#} & \textbf{Stage} & \textbf{Description} \\
+\midrule
+1 & Checkout & Récupération du code source (SCM) \\
+2 & Install Dependencies & Création venv + \texttt{pip install -r requirements.txt} \\
+3 & Run Unit Tests & Exécution \texttt{pytest -q} \\
+4 & Build Docker Image & \texttt{docker build -t beewaf:\$\{BUILD\_NUMBER\}} \\
+5 & Integration Test & Lancement conteneur + exécution test\_waf.sh \\
+6 & Push Image & \texttt{docker tag + push} vers registry \\
+7 & Deploy to K8s & \texttt{kubectl apply -f k8s/} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Post-Actions}
+
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Always} : nettoyage conteneur Docker de test
+  \item \textbf{Success} : notification de succès
+  \item \textbf{Failure} : notification d'échec
+\end{itemize}
+
+
+% ============================================================================
+% CHAPITRE 16 : CONFORMITÉ & COMPLIANCE
+% ============================================================================
+\chapter{Conformité \& Compliance (7 Frameworks)}
+
+\section{Frameworks Supportés}
+
+\begin{table}[H]
+\centering
+\caption{Frameworks de conformité supportés}
+\label{tab:compliance-frameworks}
+\begin{tabularx}{\textwidth}{@{}llX@{}}
+\toprule
+\textbf{Framework} & \textbf{Version} & \textbf{Couverture} \\
+\midrule
+OWASP Top 10 & 2021 & 100\% des 10 catégories couvertes par 10\,041 règles \\
+PCI DSS & 4.0 & Requirement 6.4 (WAF), 6.5 (coding), 10.x (logging) \\
+GDPR & 2018 & DLP (Art. 25, 32), Protection données personnelles \\
+SOC 2 & Type II & Contrôles : CC6.1, CC6.6, CC6.7, CC7.2 \\
+NIST & 800-53 Rev.5 & AC, AU, CM, IA, SC, SI controls \\
+ISO 27001 & 2022 & A.8, A.12, A.14 \\
+HIPAA & 2013 & § 164.312 (Access, Audit, Integrity, Transmission) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{OWASP Top 10 --- Mapping}
+
+\begin{longtable}{@{}clL{9cm}@{}}
+\caption{Couverture OWASP Top 10 par BeeWAF}
+\label{tab:owasp-mapping}\\
+\toprule
+\textbf{\#} & \textbf{Catégorie OWASP} & \textbf{Couverture BeeWAF} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{\#} & \textbf{Catégorie OWASP} & \textbf{Couverture BeeWAF} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+A01 & Broken Access Control & Session Protection, JWT, CSRF, BOLA, IDOR detection \\
+A02 & Cryptographic Failures & TLS 1.2/1.3, HSTS, Cookie security, DLP \\
+A03 & Injection & SQLi (800+ rules), XSS (500+ rules), CMDi, LDAP, NoSQL, XPath \\
+A04 & Insecure Design & Business logic checks, API security, Protocol validator \\
+A05 & Security Misconfig. & Sensitive path blocking, Response cloaking, Header validation \\
+A06 & Vulnerable Components & Virtual patching (37 CVE), Scanner detection \\
+A07 & Auth Failures & Credential stuffing, Bot manager, Rate limiting, Brute force \\
+A08 & Software/Data Integrity & Deserialization detection, File upload scanning \\
+A09 & Logging \& Monitoring & ELK stack, Prometheus, JSON structured logging \\
+A10 & SSRF & 200+ SSRF rules, Cloud metadata (AWS/GCP/Azure), DNS rebind \\
+\end{longtable}
+
+
+% ============================================================================
+% CHAPITRE 17 : JEUX DE DONNÉES & ENTRAÎNEMENT ML
+% ============================================================================
+\chapter{Jeux de Données \& Entraînement ML}
+
+\section{Script d'Entraînement}
+
+\begin{lstlisting}[language=bash, caption={Commandes d'entraînement ML}]
+# Entrainement complet
+python train_ml_models.py --data data/csic_database.csv \
+    --save models/ml_model.pkl
+
+# Entrainement + evaluation
+python train_ml_models.py --data data/csic_database.csv \
+    --save models/ml_model.pkl --eval
+
+# Evaluation uniquement (modele existant)
+python train_ml_models.py --test-only
+
+# Sortie JSON
+python train_ml_models.py --test-only --json
+\end{lstlisting}
+
+\section{Métriques d'Entraînement Actuelles}
+
+\begin{table}[H]
+\centering
+\caption{Métriques détaillées des modèles ML}
+\label{tab:ml-metrics}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Modèle} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} & \textbf{ROC-AUC} \\
+\midrule
+IsolationForest & 77.3\% & 72.3\% & 72.6\% & 0.724 & --- \\
+RandomForest & 94.2\% & 89.8\% & 96.7\% & 0.932 & 0.992 \\
+GradientBoosting & 95.3\% & 94.5\% & 94.1\% & 0.943 & 0.993 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ============================================================================
+% CHAPITRE 18 : TESTS & VALIDATION
+% ============================================================================
+\chapter{Tests \& Validation}
+
+\section{Infrastructure de Tests}
+
+\begin{table}[H]
+\centering
+\caption{Fichiers de tests}
+\label{tab:test-files}
+\begin{tabularx}{\textwidth}{@{}lllX@{}}
+\toprule
+\textbf{Fichier} & \textbf{Type} & \textbf{Framework} & \textbf{Couverture} \\
+\midrule
+run\_tests.py & Smoke test & FastAPI TestClient & Health, echo, basic SQLi/XSS \\
+test\_admin\_rules.py & Unit test & pytest & Admin rules, ML-stats \\
+test\_rate\_limit.py & Unit test & pytest & Rate limiting (65 requêtes) \\
+test\_waf.sh & Integration & Bash/curl & Health, benign POST, SQLi, XSS \\
+test\_all\_modules.py & \textbf{Complet} & requests & \textbf{39 sections, 261 tests} \\
+quick\_ml\_test.py & ML quick test & Python & Validation ML prédictions \\
+real\_time\_attacks.py & Stress test & Python & 10\,000+ attaques + FP \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Test Complet --- 39 Sections}
+
+\begin{longtable}{@{}clcL{7.5cm}@{}}
+\caption{Détail des 39 sections de test (261 tests)}
+\label{tab:test-sections}\\
+\toprule
+\textbf{\#} & \textbf{Section} & \textbf{Tests} & \textbf{Couverture} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{\#} & \textbf{Section} & \textbf{Tests} & \textbf{Couverture} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+1 & Connectivité \& Info & 6 & Version, modules, health, ML, rules count \\
+2 & Moteur Regex & 56 & 55 attaques (SQLi, XSS, CMDi, SSRF, XXE, LDAP, NoSQL, etc.) \\
+3 & ML Engine & 6 & Stats, predict, classify \\
+4 & Bot Detector & 7 & Normal UA, SQLMap, Nikto, Nmap, etc. \\
+5 & Bot Manager Adv. & 3 & Credential stuffing, stats \\
+6 & Rate Limiting & 3 & Normal, stats, config \\
+7 & DDoS Protection & 3 & Normal, stats, seuils \\
+8 & DLP & 3 & Credit card, SSN \\
+9 & Geo/IP Blocking & 2 & Local IP, stats \\
+10 & Protocol Validator & 4 & GET, invalid method, long URL, host injection \\
+11 & API Security & 4 & JSON, nested, BOLA, GraphQL \\
+12 & Threat Intelligence & 3 & Log4Shell, OAST, stats \\
+13 & Session Protection & 3 & JWT alg:none, admin claim, stats \\
+14 & Evasion Detector & 6 & URL-encoded, double, unicode, hex, mixed, null \\
+15 & Correlation Engine & 3 & Endpoint, campaigns, events \\
+16 & Adaptive Learning & 4 & Modes detect/enforce/learning, stats \\
+17 & Response Cloaking & 8 & Server, X-Powered-By, X-Frame, etc. \\
+18 & Cookie Security & 3 & Inspection, XSS, SQLi \\
+19 & Virtual Patching & 5 & Endpoint, 37 patches, Log4Shell, Struts, Spring \\
+20 & Zero-Day Detector & 3 & High entropy, binary chars, stats \\
+21 & WebSocket Insp. & 2 & WS upgrade, malicious payload \\
+22 & Payload Analyzer & 3 & PHP in GIF, polyglot, shell \\
+23 & Compliance Engine & 9 & Endpoint, 7 frameworks \\
+24 & API Discovery & 3 & Shadow API, GraphQL \\
+25 & Threat Feed & 4 & MITRE ATT\&CK, C2, APT \\
+26 & Cluster Manager & 3 & Stats, distributed, config \\
+27 & Performance Engine & 10 & Response time, cache, bloom, dedup \\
+28 & Sensitive Paths & 12 & .git, .env, wp-config, phpinfo, etc. \\
+29 & Business Logic & 8 & XFF spoof, negative ID, IDOR, TE smuggling \\
+30 & False Positives & 30 & 29 requêtes légitimes + compteur FP \\
+31 & TLS/Nginx & 3 & HTTP$\to$HTTPS, HTTPS, HSTS \\
+32 & Admin API & 10 & Auth reject, auth OK, wrong key \\
+33 & Prometheus Metrics & 7 & Endpoint, 6 métriques \\
+34 & Scanner Detection & 8 & SQLMap, Nikto, Nmap, Masscan, DirBuster, etc. \\
+35 & File Upload & 3 & PHP webshell, JSP, double ext. \\
+36 & Cloud Attacks & 4 & AWS, GCP, K8s, Docker \\
+37 & Encoding Attacks & 4 & Unicode, overlong UTF-8, hex, double \\
+38 & Windows Attacks & 3 & cmd.exe, PowerShell, UNC \\
+39 & Performance Bench. & 5 & Avg, P95, P99, Max, détection \\
+\midrule
+\multicolumn{2}{l}{\textbf{TOTAL}} & \textbf{261} & \\
+\end{longtable}
+
+\section{Résultats du Test Complet (10 Février 2026)}
+
+\begin{resultbox}[Résultats --- BeeWAF Enterprise v6.0]
+\centering
+\begin{tabular}{@{}lr@{}}
+\textbf{Réussis} & 260 \\
+\textbf{Échoués} & 0 \\
+\textbf{Avertissements} & 1 (Empty UA -- cosmétique) \\
+\textbf{Total} & 261 \\[0.5em]
+\textbf{Taux de réussite} & \textbf{100.0\%} \\
+\textbf{Grade fonctionnel} & \textbf{A+} \\[0.5em]
+Attaques détectées & 55/55 (100\%) \\
+Faux positifs & 0/29 (0\%) \\
+Latence moyenne & 16ms \\
+Latence P99 & 18ms \\
+Temps détection attaque & 11ms \\
+\end{tabular}
+\end{resultbox}
+
+
+% ============================================================================
+% CHAPITRE 19 : RÉSULTATS DE PERFORMANCE
+% ============================================================================
+\chapter{Résultats de Performance}
+
+\section{Benchmarks}
+
+\begin{table}[H]
+\centering
+\caption{Résultats de performance}
+\label{tab:benchmarks}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Métrique} & \textbf{Valeur} & \textbf{Objectif} & \textbf{Statut} \\
+\midrule
+Latence moyenne & \textbf{16ms} & $\leq$50ms & \textcolor{beegreen}{\checkmark} \\
+Latence P95 & \textbf{18ms} & $\leq$50ms & \textcolor{beegreen}{\checkmark} \\
+Latence P99 & \textbf{18ms} & $\leq$100ms & \textcolor{beegreen}{\checkmark} \\
+Latence max & \textbf{18ms} & $\leq$200ms & \textcolor{beegreen}{\checkmark} \\
+Temps détection attaque & \textbf{11ms} & $\leq$20ms & \textcolor{beegreen}{\checkmark} \\
+Démarrage à froid & \textbf{$\sim$12s} & $\leq$15s & \textcolor{beegreen}{\checkmark} \\
+Compilation 10\,041 règles & \textbf{$<$5s} & $\leq$10s & \textcolor{beegreen}{\checkmark} \\
+Taux de détection & \textbf{98.2\%} & $\geq$95\% & \textcolor{beegreen}{\checkmark} \\
+Taux de faux positifs & \textbf{0\%} & $\leq$2\% & \textcolor{beegreen}{\checkmark} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Comparaison avec Solutions Commerciales}
+
+\begin{table}[H]
+\centering
+\caption{Comparaison étendue avec solutions commerciales}
+\label{tab:comparison-extended}
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Métrique} & \textbf{BeeWAF} & \textbf{F5 BIG-IP} & \textbf{ModSecurity} & \textbf{AWS WAF} & \textbf{Cloudflare} \\
+\midrule
+Score & \textbf{98.2/100} & 73/100 & 65/100 & $\sim$70/100 & $\sim$80/100 \\
+Grade & \textbf{A+} & B & C+ & B- & B+ \\
+Règles & \textbf{10\,041} & $\sim$2\,500 & $\sim$900 & $\sim$200 & $\sim$5\,000 \\
+ML & \textbf{3 modèles} & Limité & Non & Limité & Oui \\
+FP Rate & \textbf{0\%} & $\sim$5\% & $\sim$8\% & $\sim$3\% & $\sim$2\% \\
+Latence & \textbf{16ms} & $\sim$5ms & $\sim$20ms & $\sim$2ms & $\sim$1ms \\
+Open Source & \textbf{Oui} & Non & Oui & Non & Non \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ============================================================================
+% CHAPITRE 20 : DÉPENDANCES & PRÉREQUIS
+% ============================================================================
+\chapter{Dépendances \& Prérequis}
+
+\section{Prérequis Système}
+
+\begin{table}[H]
+\centering
+\caption{Prérequis système}
+\label{tab:prerequisites}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Composant} & \textbf{Version Minimum} & \textbf{Recommandé} \\
+\midrule
+Docker & 20.x & 24+ \\
+Docker Compose & 2.x & 2.24+ \\
+Python & 3.11 & 3.11 \\
+RAM & 2 Go & 4 Go+ (avec ELK) \\
+Disque & 5 Go & 20 Go+ (avec logs) \\
+CPU & 2 c\oe{}urs & 4 c\oe{}urs \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Ports Réseau}
+
+\begin{table}[H]
+\centering
+\caption{Ports réseau utilisés}
+\label{tab:ports}
+\begin{tabular}{@{}clc@{}}
+\toprule
+\textbf{Port} & \textbf{Service} & \textbf{Protocole} \\
+\midrule
+80 & Nginx HTTP (redirect) & TCP \\
+443 & Nginx HTTPS & TCP \\
+8000 & BeeWAF FastAPI (interne) & TCP \\
+9200 & Elasticsearch & TCP \\
+5044 & Logstash (beats) & TCP/UDP \\
+5601 & Kibana & TCP \\
+9600 & Logstash monitoring & TCP \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ============================================================================
+% CHAPITRE 21 : VARIABLES D'ENVIRONNEMENT
+% ============================================================================
+\chapter{Variables d'Environnement}
+
+\begin{table}[H]
+\centering
+\caption{Variables d'environnement}
+\label{tab:env-vars}
+\small
+\begin{tabularx}{\textwidth}{@{}llXc@{}}
+\toprule
+\textbf{Variable} & \textbf{Défaut} & \textbf{Description} & \textbf{Oblig.} \\
+\midrule
+\texttt{BEEWAF\_API\_KEY} & \texttt{changeme-*} & Clé API administration & $\triangle$ \\
+\texttt{BEEWAF\_MODEL\_PATH} & models/anomaly*.pkl & Chemin modèle anomaly legacy & Non \\
+\texttt{BEEWAF\_ML\_ENGINE\_PATH} & models/ml\_model.pkl & Chemin modèle ML ensemble & Non \\
+\texttt{BEEWAF\_TRAIN\_DATA} & train\_demo.csv & Données entraînement legacy & Non \\
+\texttt{BEEWAF\_CSIC\_DATA} & csic\_database.csv & Dataset CSIC pour ML & Non \\
+\texttt{BEEWAF\_ML\_MODE} & advanced & Mode ML : legacy / advanced & Non \\
+\texttt{BEEWAF\_ALLOWED\_HOSTS} & \emph{(vide)} & Hosts autorisés (comma-separated) & Non \\
+\texttt{BEEWAF\_RULES\_FILE} & \emph{(vide)} & Fichier de règles supplémentaires & Non \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{warnbox}[Attention]
+La variable \texttt{BEEWAF\_API\_KEY} doit impérativement être changée en production. La valeur par défaut \texttt{changeme-default-key-not-secure} ne doit jamais être utilisée en environnement de production.
+\end{warnbox}
+
+
+% ============================================================================
+% CHAPITRE 22 : SÉCURITÉ & AUTHENTIFICATION
+% ============================================================================
+\chapter{Sécurité \& Authentification}
+
+\section{TLS/SSL}
+
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Protocoles} : TLS 1.2 et TLS 1.3 uniquement
+  \item \textbf{Chiffrement} : Suites ECDHE (Perfect Forward Secrecy)
+  \item \textbf{HSTS} : \texttt{max-age=31536000; includeSubDomains}
+  \item \textbf{Certificats} : \texttt{/etc/nginx/ssl/tls.crt} + \texttt{/etc/nginx/ssl/tls.key}
+\end{itemize}
+
+\section{Headers de Sécurité}
+
+\begin{table}[H]
+\centering
+\caption{Headers de sécurité complets}
+\label{tab:security-headers}
+\begin{tabularx}{\textwidth}{@{}llX@{}}
+\toprule
+\textbf{Header} & \textbf{Valeur} & \textbf{Protection} \\
+\midrule
+\texttt{X-Frame-Options} & \texttt{DENY} & Anti-clickjacking \\
+\texttt{X-Content-Type-Options} & \texttt{nosniff} & Anti-MIME sniffing \\
+\texttt{X-XSS-Protection} & \texttt{1; mode=block} & Filtre XSS navigateur \\
+\texttt{Strict-Transport-Security} & \texttt{max-age=31536000} & Force HTTPS \\
+\texttt{Referrer-Policy} & \texttt{strict-origin-*} & Contrôle Referer \\
+\texttt{Permissions-Policy} & \texttt{geolocation=(), ...} & Restrictions API \\
+\texttt{Server} & \emph{(masqué)} & Cloaking serveur \\
+\texttt{X-Powered-By} & \emph{(supprimé)} & Cloaking technologie \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Authentification API Admin}
+
+\begin{lstlisting}[language=bash, caption={Authentification API}]
+Header requis : X-API-Key
+Cle configuree via : BEEWAF_API_KEY
+Reponses : 401 (absente), 403 (invalide), 200 (valide)
+\end{lstlisting}
+
+\section{Protection contre les Abus}
+
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Rate Limiting} : Configurable par méthode HTTP (GET/POST)
+  \item \textbf{IP Blocklist} : Blocage automatique après seuil de violations
+  \item \textbf{DDoS Protection} : 3 niveaux (warn/throttle/block)
+  \item \textbf{Credential Stuffing} : Détection login rapide ($>$5 tentatives/60s)
+\end{itemize}
+
+
+% ============================================================================
+% CHAPITRE 23 : ÉVOLUTIONS & HISTORIQUE
+% ============================================================================
+\chapter{Évolutions \& Historique des Versions}
+
+\section{Changelog}
+
+\begin{table}[H]
+\centering
+\caption{Historique des versions}
+\label{tab:changelog}
+\begin{tabularx}{\textwidth}{@{}ccX@{}}
+\toprule
+\textbf{Version} & \textbf{Date} & \textbf{Changements Majeurs} \\
+\midrule
+v1.0 & 2025 & WAF basique : règles regex, anomaly detector IsolationForest \\
+v2.0 & 2025 & Ajout rate limiting, bot detection, Docker Compose \\
+v3.0 & 2025 & Stack ELK (Elasticsearch + Logstash + Kibana + Filebeat) \\
+v4.0 & 2025 & 15 modules avancés, 425+ règles, score 82.5 (bat F5 BIG-IP : 73) \\
+v5.0 & Jan 2026 & 27 modules, ML ensemble 3 modèles, 7 frameworks compliance, score 98.3/100 Grade A+ \\
+\textbf{v6.0} & \textbf{Fév 2026} & \textbf{10\,041 règles, 0\% FP, 37 CVE patches, 100\% tests (260/260)} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Métriques d'Évolution}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+  \draw[thick, -Stealth] (0,0) -- (12,0) node[right] {Version};
+  \draw[thick, -Stealth] (0,0) -- (0,6) node[above] {Score /100};
+
+  % Grid
+  \foreach \y in {20,40,60,80,100} {
+    \draw[gray!30] (0,\y/20) -- (11.5,\y/20);
+    \node[left, font=\tiny] at (0,\y/20) {\y};
+  }
+
+  % Data points
+  \fill[beered] (1,3) circle (4pt) node[above, font=\scriptsize] {v1.0: 60};
+  \fill[beered!80] (3,3.4) circle (4pt) node[above, font=\scriptsize] {v2.0: 68};
+  \fill[beeyellow] (5,3.6) circle (4pt) node[above, font=\scriptsize] {v3.0: 72};
+  \fill[beeblue] (7,4.125) circle (4pt) node[above, font=\scriptsize] {v4.0: 82.5};
+  \fill[beegreen] (9,4.915) circle (4pt) node[above, font=\scriptsize] {v5.0: 98.3};
+  \fill[beegreen!80!black] (11,4.91) circle (5pt) node[above, font=\scriptsize\bfseries] {v6.0: 98.2};
+
+  % Line
+  \draw[thick, beedark] (1,3) -- (3,3.4) -- (5,3.6) -- (7,4.125) -- (9,4.915) -- (11,4.91);
+\end{tikzpicture}
+\caption{Évolution du score de détection par version}
+\label{fig:evolution}
+\end{figure}
+
+
+% ============================================================================
+% CHAPITRE 24 : ANNEXES
+% ============================================================================
+\chapter{Annexes}
+
+\section{Structure du Projet}
+
+\begin{lstlisting}[language=bash, caption={Arborescence complète du projet}, basicstyle=\ttfamily\scriptsize]
+beehivepfe2-main/
+  app/
+    main.py                    # Application FastAPI (~1 317 lignes)
+  waf/
+    __init__.py                # Package WAF (27 modules)
+    rules.py                   # Moteur de regles principal
+    rules_extended.py          # 586 regles etendues
+    rules_advanced.py          # 425 regles avancees v4.0
+    rules_v5.py                # 1 207 regles v5.0
+    rules_mega_1.py            # 1 120 regles mega pack 1
+    rules_mega_2.py            # 542 regles mega pack 2
+    rules_mega_3.py            # 412 regles mega pack 3
+    rules_mega_4.py            # 292 regles mega pack 4
+    rules_mega_5.py            # 313 regles mega pack 5
+    rules_mega_6.py            # 214 regles mega pack 6
+    rules_mega_7.py            # 1 091 regles mega pack 7
+    rules_mega_8.py            # 1 161 regles mega pack 8
+    rules_mega_9.py            # 887 regles mega pack 9
+    rules_mega_10.py           # 776 regles mega pack 10
+    rules_mega_11.py           # 576 regles mega pack 11
+    rules_mega_12.py           # 152 regles mega pack 12
+    ml_engine.py               # Moteur ML ensemble 3 modeles
+    anomaly.py                 # Anomaly detector legacy
+    ratelimit.py               # Rate limiter + IP blocklist
+    bot_detector.py            # Detection bots
+    bot_manager_advanced.py    # Bot manager avance
+    dlp.py                     # Data Loss Prevention
+    geo_block.py               # Blocage geographique
+    protocol_validator.py      # Validation protocole HTTP
+    api_security.py            # Securite API
+    threat_intel.py            # Threat Intelligence
+    threat_feed.py             # Threat Feed
+    session_protection.py      # Protection session
+    evasion_detector.py        # Detecteur d'evasion
+    correlation_engine.py      # Moteur de correlation
+    adaptive_learning.py       # Apprentissage adaptatif
+    response_cloaking.py       # Camouflage reponse
+    cookie_security.py         # Securite cookies
+    virtual_patching.py        # Patches virtuels CVE
+    zero_day_detector.py       # Detecteur zero-day
+    websocket_inspector.py     # Inspecteur WebSocket
+    payload_analyzer.py        # Analyseur payload
+    compliance_engine.py       # Moteur conformite
+    ddos_protection.py         # Protection DDoS
+    api_discovery.py           # Decouverte API
+    cluster_manager.py         # Manager cluster
+    performance_engine.py      # Moteur performance
+    clamav_scanner.py          # Scanner ClamAV (optionnel)
+  data/
+    csic_database.csv          # Dataset CSIC 2010 (61 065 samples)
+    train_demo.csv             # Dataset demo
+    train_kaggle.csv           # Dataset Kaggle
+    train_synthetic.csv        # Dataset synthetique
+  models/
+    anomaly_model.pkl          # Modele legacy
+    ml_model.pkl               # Modele ML ensemble
+  elk/
+    filebeat/filebeat.yml      # Config Filebeat
+    logstash/
+      config/logstash.yml      # Config Logstash
+      pipeline/beewaf.conf     # Pipeline Logstash
+  k8s/
+    deployment.yaml            # Deploiement K8s
+    service.yaml               # Service K8s
+    ingress.yaml               # Ingress TLS K8s
+    tls-secret.yaml            # Secret TLS
+    tls/                       # Certificats TLS
+  tests/
+    run_tests.py               # Smoke tests
+    test_admin_rules.py        # Tests admin
+    test_rate_limit.py         # Tests rate limit
+    test_waf.sh                # Tests integration bash
+  docker-compose-elk.yaml      # Docker Compose (6 services)
+  docker-compose.yaml          # Docker Compose simple
+  Dockerfile.full              # Dockerfile complet (principal)
+  nginx.conf                   # Configuration Nginx
+  Jenkinsfile                  # Pipeline CI/CD Jenkins
+  requirements.txt             # Dependances Python
+  train_ml_models.py           # Script entrainement ML
+  CAHIER_DE_CHARGE.tex         # Ce document (LaTeX)
+\end{lstlisting}
+
+\section{Glossaire}
+
+\begin{longtable}{@{}lL{10cm}@{}}
+\caption{Glossaire des termes techniques}
+\label{tab:glossaire}\\
+\toprule
+\textbf{Terme} & \textbf{Définition} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Terme} & \textbf{Définition} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+WAF & Web Application Firewall --- pare-feu applicatif web \\
+ML & Machine Learning --- apprentissage automatique \\
+FP & False Positive --- faux positif (requête légitime bloquée à tort) \\
+OWASP & Open Web Application Security Project \\
+PCI DSS & Payment Card Industry Data Security Standard \\
+GDPR & General Data Protection Regulation \\
+HIPAA & Health Insurance Portability and Accountability Act \\
+SOC 2 & Service Organization Control Type 2 \\
+NIST & National Institute of Standards and Technology \\
+ELK & Elasticsearch + Logstash + Kibana \\
+SSRF & Server-Side Request Forgery \\
+XSS & Cross-Site Scripting \\
+SQLi & SQL Injection \\
+CMDi & Command Injection \\
+XXE & XML External Entity \\
+SSTI & Server-Side Template Injection \\
+CSRF & Cross-Site Request Forgery \\
+BOLA & Broken Object Level Authorization \\
+IDOR & Insecure Direct Object Reference \\
+DLP & Data Loss Prevention \\
+DDoS & Distributed Denial of Service \\
+CVE & Common Vulnerabilities and Exposures \\
+MITRE ATT\&CK & Framework de classification des techniques d'attaque \\
+JA3 & TLS fingerprinting method \\
+HSTS & HTTP Strict Transport Security \\
+\end{longtable}
+
+\section{Références}
+
+\begin{enumerate}[leftmargin=2em]
+  \item OWASP Top 10 (2021) --- \url{https://owasp.org/Top10/}
+  \item CSIC 2010 HTTP Dataset --- Universidad Carlos III de Madrid
+  \item PCI DSS v4.0 --- \url{https://www.pcisecuritystandards.org/}
+  \item NIST 800-53 Rev.5 --- \url{https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final}
+  \item MITRE ATT\&CK --- \url{https://attack.mitre.org/}
+  \item scikit-learn Documentation --- \url{https://scikit-learn.org/}
+  \item FastAPI Documentation --- \url{https://fastapi.tiangolo.com/}
+\end{enumerate}
+
+\vfill
+
+\begin{center}
+\rule{0.8\textwidth}{0.4pt}\\[0.5em]
+{\small\bfseries Document généré le 10 Février 2026}\\[0.3em]
+{\small BeeWAF Enterprise v6.0 --- 10\,041 règles | 3 modèles ML | 27 modules | 7 frameworks}\\[0.3em]
+{\small\color{beegreen}\bfseries Grade Fonctionnel : A+ (260/260 tests, 100\%)}
+\end{center}
+
+\end{document}
