@@ -386,14 +386,14 @@ spec:
           name: monitoring
         env:
         - name: LS_JAVA_OPTS
-          value: "-Xms256m -Xmx256m"
+          value: "-Xms384m -Xmx384m"
         resources:
           requests:
             cpu: "200m"
             memory: "512Mi"
           limits:
             cpu: "500m"
-            memory: "768Mi"
+            memory: "1Gi"
         volumeMounts:
         - name: logstash-config
           mountPath: /usr/share/logstash/config/logstash.yml
