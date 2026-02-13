@@ -1,0 +1,675 @@
+# =============================================================================
+# 🐝 BeeWAF Enterprise v6.0 — ELK Stack Complet pour K8s (DPC Cluster)
+# 
+# Composants: Elasticsearch + Logstash + Kibana + Filebeat
+# Cluster: K8s v1.29, containerd, testhamaster1 (192.168.90.10)
+# Pipeline: BeeWAF (JSON stdout) → Filebeat → Logstash → Elasticsearch → Kibana
+#
+# Usage: kubectl apply -f k8s/elk-stack.yaml
+# =============================================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. ELASTICSEARCH — Stockage des logs (single-node, emptyDir pour staging)
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch
+  namespace: beewaf
+  labels:
+    app: elasticsearch
+    component: elk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+        component: elk
+    spec:
+      nodeName: testhamaster1
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      initContainers:
+      - name: fix-permissions
+        image: busybox:1.36
+        command: ["sh", "-c", "chown -R 1000:1000 /usr/share/elasticsearch/data"]
+        volumeMounts:
+        - name: es-data
+          mountPath: /usr/share/elasticsearch/data
+      containers:
+      - name: elasticsearch
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+        ports:
+        - containerPort: 9200
+          name: http
+        - containerPort: 9300
+          name: transport
+        env:
+        - name: discovery.type
+          value: "single-node"
+        - name: xpack.security.enabled
+          value: "false"
+        - name: xpack.security.enrollment.enabled
+          value: "false"
+        - name: xpack.security.http.ssl.enabled
+          value: "false"
+        - name: xpack.security.transport.ssl.enabled
+          value: "false"
+        - name: ES_JAVA_OPTS
+          value: "-Xms384m -Xmx384m"
+        - name: cluster.name
+          value: "beewaf-logs"
+        - name: node.name
+          value: "es-node-1"
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "500m"
+            memory: "768Mi"
+        readinessProbe:
+          httpGet:
+            path: /_cluster/health?wait_for_status=yellow
+            port: 9200
+          initialDelaySeconds: 90
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 10
+        livenessProbe:
+          httpGet:
+            path: /_cluster/health
+            port: 9200
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+        volumeMounts:
+        - name: es-data
+          mountPath: /usr/share/elasticsearch/data
+      volumes:
+      - name: es-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: beewaf
+  labels:
+    app: elasticsearch
+spec:
+  selector:
+    app: elasticsearch
+  ports:
+  - name: http
+    port: 9200
+    targetPort: 9200
+  - name: transport
+    port: 9300
+    targetPort: 9300
+  type: ClusterIP
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. LOGSTASH — Pipeline de traitement des logs BeeWAF
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: beewaf
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    xpack.monitoring.enabled: false
+    pipeline.workers: 1
+    pipeline.batch.size: 125
+    log.level: info
+
+  beewaf.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+    }
+
+    filter {
+      # ── 1. Filtrer : garder uniquement les logs BeeWAF ──
+      if [kubernetes][labels][app] != "beewaf" {
+        drop { }
+      }
+
+      # ── 2. Supprimer les logs non-JSON (Uvicorn access logs, etc.) ──
+      if [message] =~ "^INFO:" or [message] =~ "^WARNING:" or [message] =~ "^ERROR:" or [message] =~ "^\[" or [message] !~ "^\{" {
+        drop { }
+      }
+
+      # ── 3. Parser le JSON BeeWAF ──
+      if [message] {
+        json {
+          source => "message"
+          target => "beewaf"
+          skip_on_invalid_json => true
+        }
+      }
+
+      # ── 4. Extraire les champs vers le root level ──
+      if [beewaf] {
+        mutate {
+          rename => { "[beewaf][event]" => "event_type" }
+          rename => { "[beewaf][message]" => "log_message" }
+          rename => { "[beewaf][client_ip]" => "client_ip" }
+          rename => { "[beewaf][method]" => "http_method" }
+          rename => { "[beewaf][path]" => "http_path" }
+          rename => { "[beewaf][status_code]" => "status_code" }
+          rename => { "[beewaf][blocked]" => "blocked" }
+          rename => { "[beewaf][block_reason]" => "block_reason" }
+          rename => { "[beewaf][latency_ms]" => "latency_ms" }
+          rename => { "[beewaf][body_preview]" => "body_preview" }
+          rename => { "[beewaf][user_agent]" => "user_agent" }
+          rename => { "[beewaf][@timestamp]" => "app_timestamp" }
+          rename => { "[beewaf][level]" => "log_level" }
+          rename => { "[beewaf][reason]" => "block_reason_alt" }
+          add_field => { "service" => "beewaf" }
+        }
+
+        # Fusionner block_reason alternatif si le principal est vide
+        if ![block_reason] and [block_reason_alt] {
+          mutate { rename => { "block_reason_alt" => "block_reason" } }
+        } else {
+          mutate { remove_field => [ "block_reason_alt" ] }
+        }
+
+        mutate {
+          remove_field => [ "beewaf", "message" ]
+        }
+      }
+
+      # ── 5. Parser le timestamp applicatif ──
+      if [app_timestamp] {
+        date {
+          match => [ "app_timestamp", "ISO8601" ]
+          target => "@timestamp"
+        }
+        mutate { remove_field => [ "app_timestamp" ] }
+      }
+
+      # ── 6. Enrichissement des événements bloqués ──
+      if [event_type] == "blocked" or [blocked] == true or [status_code] == 403 {
+        mutate { add_tag => [ "security", "blocked" ] }
+
+        # === Regex WAF Rules ===
+        if [block_reason] == "regex-sqli" {
+          mutate { add_field => { "attack_type" => "SQL Injection" "attack_category" => "injection" "severity" => "critical" } add_tag => [ "sqli", "owasp-a03" ] }
+        } else if [block_reason] == "regex-xss" {
+          mutate { add_field => { "attack_type" => "Cross-Site Scripting (XSS)" "attack_category" => "injection" "severity" => "high" } add_tag => [ "xss", "owasp-a03" ] }
+        } else if [block_reason] == "regex-cmdi" or [block_reason] == "regex-cmd-injection" {
+          mutate { add_field => { "attack_type" => "Command Injection" "attack_category" => "injection" "severity" => "critical" } add_tag => [ "cmdi", "owasp-a03" ] }
+        } else if [block_reason] == "regex-path-traversal" or [block_reason] == "path-traversal-detected" {
+          mutate { add_field => { "attack_type" => "Path Traversal / LFI" "attack_category" => "file-access" "severity" => "high" } add_tag => [ "lfi", "path-traversal", "owasp-a01" ] }
+        } else if [block_reason] == "regex-ssrf" {
+          mutate { add_field => { "attack_type" => "SSRF" "attack_category" => "ssrf" "severity" => "critical" } add_tag => [ "ssrf", "owasp-a10" ] }
+        } else if [block_reason] == "regex-rce" {
+          mutate { add_field => { "attack_type" => "Remote Code Execution" "attack_category" => "injection" "severity" => "critical" } add_tag => [ "rce", "owasp-a03" ] }
+        } else if [block_reason] == "regex-nosql-injection" {
+          mutate { add_field => { "attack_type" => "NoSQL Injection" "attack_category" => "injection" "severity" => "high" } add_tag => [ "nosql", "owasp-a03" ] }
+        } else if [block_reason] == "regex-log4j" or [block_reason] == "regex-log4shell" {
+          mutate { add_field => { "attack_type" => "Log4Shell (CVE-2021-44228)" "attack_category" => "cve" "severity" => "critical" } add_tag => [ "log4shell", "cve", "owasp-a06" ] }
+        } else if [block_reason] == "regex-ssti" {
+          mutate { add_field => { "attack_type" => "Server-Side Template Injection" "attack_category" => "injection" "severity" => "high" } add_tag => [ "ssti", "owasp-a03" ] }
+        } else if [block_reason] == "regex-xxe" {
+          mutate { add_field => { "attack_type" => "XML External Entity (XXE)" "attack_category" => "injection" "severity" => "high" } add_tag => [ "xxe", "owasp-a05" ] }
+        } else if [block_reason] =~ "^regex-" {
+          mutate { add_field => { "attack_type" => "Regex Rule Match" "attack_category" => "signature" "severity" => "medium" } add_tag => [ "regex-match" ] }
+
+        # === ML Detection ===
+        } else if [block_reason] =~ "^ml-" or [block_reason] == "ml_attack" {
+          mutate { add_field => { "attack_type" => "ML Detected Attack" "attack_category" => "ml" "severity" => "high" } add_tag => [ "ml-detection", "ai" ] }
+        } else if [block_reason] == "anomaly" {
+          mutate { add_field => { "attack_type" => "ML Anomaly Detected" "attack_category" => "ml" "severity" => "medium" } add_tag => [ "anomaly", "ml", "ai" ] }
+
+        # === Rate Limiting & DDoS ===
+        } else if [block_reason] == "rate-limit" {
+          mutate { add_field => { "attack_type" => "Rate Limit Exceeded" "attack_category" => "dos" "severity" => "medium" } add_tag => [ "rate-limit", "dos" ] }
+        } else if [block_reason] == "ip-blacklisted" {
+          mutate { add_field => { "attack_type" => "IP Blacklisted (Auto)" "attack_category" => "reputation" "severity" => "high" } add_tag => [ "blacklist", "auto-block" ] }
+
+        # === Bot Detection ===
+        } else if [block_reason] =~ "bot" {
+          mutate { add_field => { "attack_type" => "Bot Detection" "attack_category" => "bot" "severity" => "medium" } add_tag => [ "bot", "automation" ] }
+
+        # === Protocol & Smuggling ===
+        } else if [block_reason] == "http-smuggling" {
+          mutate { add_field => { "attack_type" => "HTTP Request Smuggling" "attack_category" => "protocol" "severity" => "critical" } add_tag => [ "smuggling", "owasp-a05" ] }
+        } else if [block_reason] =~ "protocol" {
+          mutate { add_field => { "attack_type" => "Protocol Violation" "attack_category" => "protocol" "severity" => "medium" } add_tag => [ "protocol" ] }
+
+        # === Access Control ===
+        } else if [block_reason] == "access-denied" {
+          mutate { add_field => { "attack_type" => "Sensitive Path Access" "attack_category" => "recon" "severity" => "medium" } add_tag => [ "recon", "sensitive-path" ] }
+        } else if [block_reason] == "invalid-host-header" {
+          mutate { add_field => { "attack_type" => "Host Header Injection" "attack_category" => "injection" "severity" => "medium" } add_tag => [ "host-injection" ] }
+        } else if [block_reason] == "xff-spoof" {
+          mutate { add_field => { "attack_type" => "XFF Spoofing" "attack_category" => "evasion" "severity" => "medium" } add_tag => [ "xff-spoof", "evasion" ] }
+
+        # === Business Logic ===
+        } else if [block_reason] =~ "business-logic" {
+          mutate { add_field => { "attack_type" => "Business Logic Abuse" "attack_category" => "logic" "severity" => "high" } add_tag => [ "business-logic", "owasp-a04" ] }
+
+        # === Geo Blocking ===
+        } else if [block_reason] =~ "geo" {
+          mutate { add_field => { "attack_type" => "Geo-IP Blocked" "attack_category" => "geo" "severity" => "low" } add_tag => [ "geo-block" ] }
+
+        # === Threat Intel ===
+        } else if [block_reason] =~ "threat" {
+          mutate { add_field => { "attack_type" => "Threat Intelligence Match" "attack_category" => "threat-intel" "severity" => "high" } add_tag => [ "threat-intel", "ioc" ] }
+
+        # === API Security ===
+        } else if [block_reason] =~ "api" or [block_reason] =~ "bola" {
+          mutate { add_field => { "attack_type" => "API Security Violation" "attack_category" => "api" "severity" => "high" } add_tag => [ "api-abuse", "owasp-a01" ] }
+
+        # === Zero-Day ===
+        } else if [block_reason] =~ "zero-day" or [block_reason] =~ "zeroday" {
+          mutate { add_field => { "attack_type" => "Zero-Day Heuristic" "attack_category" => "zero-day" "severity" => "critical" } add_tag => [ "zero-day", "heuristic" ] }
+
+        # === Virtual Patching ===
+        } else if [block_reason] =~ "virtual-patch" or [block_reason] =~ "cve" {
+          mutate { add_field => { "attack_type" => "CVE Virtual Patch" "attack_category" => "cve" "severity" => "critical" } add_tag => [ "cve", "virtual-patch" ] }
+
+        # === Default ===
+        } else {
+          mutate { add_field => { "attack_type" => "Other Attack" "attack_category" => "other" "severity" => "medium" } }
+        }
+      }
+
+      # ── 7. Marquer les requêtes légitimes ──
+      if [event_type] == "request" and [blocked] != true and [status_code] != 403 {
+        mutate { add_tag => [ "legitimate" ] }
+        if ![attack_type] {
+          mutate { add_field => { "attack_type" => "none" "attack_category" => "none" "severity" => "none" } }
+        }
+      }
+
+      # ── 8. Compteur de requêtes (pour agrégations) ──
+      mutate {
+        add_field => { "request_count" => 1 }
+      }
+      mutate {
+        convert => { "request_count" => "integer" "status_code" => "integer" "latency_ms" => "float" }
+      }
+
+      # ── 9. Nettoyage des métadonnées Filebeat/K8s ──
+      mutate {
+        remove_field => [ "agent", "ecs", "input", "log", "host", "event", "container", "stream", "kubernetes" ]
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts => ["http://elasticsearch:9200"]
+        index => "beewaf-logs-%{+YYYY.MM.dd}"
+        manage_template => true
+        template_name => "beewaf-logs"
+        template_overwrite => true
+        template => "/usr/share/logstash/pipeline/beewaf-template.json"
+      }
+    }
+
+  beewaf-template.json: |
+    {
+      "index_patterns": ["beewaf-logs-*"],
+      "settings": {
+        "number_of_shards": 1,
+        "number_of_replicas": 0,
+        "refresh_interval": "5s"
+      },
+      "mappings": {
+        "properties": {
+          "@timestamp": { "type": "date" },
+          "event_type": { "type": "keyword" },
+          "client_ip": { "type": "ip" },
+          "http_method": { "type": "keyword" },
+          "http_path": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 512 } } },
+          "status_code": { "type": "integer" },
+          "blocked": { "type": "boolean" },
+          "block_reason": { "type": "keyword" },
+          "attack_type": { "type": "keyword" },
+          "attack_category": { "type": "keyword" },
+          "severity": { "type": "keyword" },
+          "latency_ms": { "type": "float" },
+          "body_preview": { "type": "text" },
+          "user_agent": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
+          "log_message": { "type": "text" },
+          "log_level": { "type": "keyword" },
+          "service": { "type": "keyword" },
+          "request_count": { "type": "integer" },
+          "tags": { "type": "keyword" }
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: beewaf
+  labels:
+    app: logstash
+    component: elk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+        component: elk
+    spec:
+      nodeName: testhamaster1
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash:8.11.0
+        ports:
+        - containerPort: 5044
+          name: beats
+        - containerPort: 9600
+          name: monitoring
+        env:
+        - name: LS_JAVA_OPTS
+          value: "-Xms192m -Xmx192m"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "300m"
+            memory: "384Mi"
+        volumeMounts:
+        - name: logstash-config
+          mountPath: /usr/share/logstash/config/logstash.yml
+          subPath: logstash.yml
+        - name: logstash-config
+          mountPath: /usr/share/logstash/pipeline/beewaf.conf
+          subPath: beewaf.conf
+        - name: logstash-config
+          mountPath: /usr/share/logstash/pipeline/beewaf-template.json
+          subPath: beewaf-template.json
+      volumes:
+      - name: logstash-config
+        configMap:
+          name: logstash-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: beewaf
+  labels:
+    app: logstash
+spec:
+  selector:
+    app: logstash
+  ports:
+  - name: beats
+    port: 5044
+    targetPort: 5044
+  - name: monitoring
+    port: 9600
+    targetPort: 9600
+  type: ClusterIP
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. KIBANA — Interface de supervision et dashboards
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: beewaf
+  labels:
+    app: kibana
+    component: elk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+        component: elk
+    spec:
+      nodeName: testhamaster1
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: kibana
+        image: docker.elastic.co/kibana/kibana:8.11.0
+        ports:
+        - containerPort: 5601
+          name: http
+        env:
+        - name: ELASTICSEARCH_HOSTS
+          value: "http://elasticsearch:9200"
+        - name: SERVER_NAME
+          value: "beewaf-kibana"
+        - name: XPACK_SECURITY_ENABLED
+          value: "false"
+        - name: TELEMETRY_ENABLED
+          value: "false"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "300m"
+            memory: "384Mi"
+        readinessProbe:
+          httpGet:
+            path: /api/status
+            port: 5601
+          initialDelaySeconds: 90
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 10
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: 5601
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: beewaf
+  labels:
+    app: kibana
+spec:
+  selector:
+    app: kibana
+  ports:
+  - name: http
+    port: 5601
+    targetPort: 5601
+    nodePort: 30561
+  type: NodePort
+---
+# Ingress optionnel pour accès via nom de domaine
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kibana-ingress
+  namespace: beewaf
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: kibana.dpc.com.tn
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kibana
+            port:
+              number: 5601
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. FILEBEAT — Collecte des logs BeeWAF (DaemonSet sur testhamaster1)
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: beewaf
+data:
+  filebeat.yml: |
+    filebeat.inputs:
+      - type: container
+        paths:
+          - /var/log/containers/beewaf-*.log
+        processors:
+          - add_kubernetes_metadata:
+              host: ${NODE_NAME}
+              matchers:
+              - logs_path:
+                  logs_path: "/var/log/containers/"
+        # Ne pas parser le JSON ici — Logstash s'en charge
+        json.keys_under_root: false
+
+    output.logstash:
+      hosts: ["logstash.beewaf.svc.cluster.local:5044"]
+      loadbalance: false
+
+    logging.level: warning
+    logging.to_files: false
+
+    # Limite mémoire du buffer
+    queue.mem:
+      events: 1024
+      flush.min_events: 128
+      flush.timeout: 1s
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: filebeat
+  namespace: beewaf
+  labels:
+    app: filebeat
+    component: elk
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+  template:
+    metadata:
+      labels:
+        app: filebeat
+        component: elk
+    spec:
+      # Uniquement sur testhamaster1 (seul nœud avec BeeWAF)
+      nodeSelector:
+        kubernetes.io/hostname: testhamaster1
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      serviceAccountName: filebeat
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: filebeat
+        image: docker.elastic.co/beats/filebeat:8.11.0
+        args: ["-c", "/etc/filebeat/filebeat.yml", "-e", "--strict.perms=false"]
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "150m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/filebeat/filebeat.yml
+          subPath: filebeat.yml
+        - name: varlogcontainers
+          mountPath: /var/log/containers
+          readOnly: true
+        - name: varlogpods
+          mountPath: /var/log/pods
+          readOnly: true
+        - name: varlibcontainerd
+          mountPath: /var/lib/containerd
+          readOnly: true
+        securityContext:
+          runAsUser: 0
+      volumes:
+      - name: config
+        configMap:
+          name: filebeat-config
+      - name: varlogcontainers
+        hostPath:
+          path: /var/log/containers
+      - name: varlogpods
+        hostPath:
+          path: /var/log/pods
+      - name: varlibcontainerd
+        hostPath:
+          path: /var/lib/containerd
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: filebeat
+  namespace: beewaf
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: filebeat-beewaf
+rules:
+- apiGroups: [""]
+  resources: ["namespaces", "pods", "nodes"]
+  verbs: ["get", "watch", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: filebeat-beewaf
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: filebeat-beewaf
+subjects:
+- kind: ServiceAccount
+  name: filebeat
+  namespace: beewaf
