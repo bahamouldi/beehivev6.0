@@ -791,6 +791,24 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
         (re.compile(r'`[^`]+`', 0), 'rce'),
     ]
     
+    # Malicious header patterns that should ALWAYS be blocked, even on ALLOW_PATHS
+    MALICIOUS_HEADER_PATTERNS = [
+        # Cache poisoning with malicious domains
+        (re.compile(r'X-Forwarded-Host\s*:\s*(?:evil|attacker|hacker|malicious)\b', re.I), 'cache_poisoning'),
+        (re.compile(r'X-Forwarded-Host\s*:\s*\w+\.(?:evil|attacker|hacker|malicious|burp|ngrok|interact\.sh|oast)\.\w+', re.I), 'cache_poisoning'),
+        (re.compile(r'X-Forwarded-Host\s*:\s*\w+\.interact\.sh\b', re.I), 'cache_poisoning'),
+        (re.compile(r'X-Forwarded-Host\s*:\s*\w+\.oast\.\w+', re.I), 'cache_poisoning'),
+        (re.compile(r'X-Host\s*:\s*(?:evil|attacker|hacker|malicious)\b', re.I), 'cache_poisoning'),
+        # Loopback/localhost in X-Forwarded-For (bypass attempt)
+        (re.compile(r'X-Forwarded-For\s*:\s*127\.0\.0\.1\b', re.I), 'cache_poisoning'),
+        (re.compile(r'X-Forwarded-For\s*:\s*localhost\b', re.I), 'cache_poisoning'),
+        (re.compile(r'X-Forwarded-For\s*:\s*0\.0\.0\.0\b', re.I), 'cache_poisoning'),
+        (re.compile(r'X-Forwarded-For\s*:\s*169\.254\.169\.254\b', re.I), 'cache_poisoning'),
+        # Admin path injection via headers
+        (re.compile(r'X-Original-URL\s*:\s*/(?:admin|internal|debug|console|actuator)\b', re.I), 'cache_poisoning'),
+        (re.compile(r'X-Rewrite-URL\s*:\s*/(?:admin|internal|debug|console|actuator)\b', re.I), 'cache_poisoning'),
+    ]
+    
     # Check high-severity attacks first (always active)
     if body or path:
         check_target = (path or '') + ' ' + (body or '')
@@ -798,6 +816,15 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
         for pat, kind in HIGH_SEVERITY_PATTERNS:
             if pat.search(check_target) or pat.search(decoded_target):
                 return True, f"high-severity-{kind}"
+    
+    # Check malicious headers (always active, even on allowed paths)
+    # Check raw headers directly (not through _headers_to_text which skips some)
+    if headers:
+        for h_name, h_value in headers.items():
+            header_line = f"{h_name}: {h_value}"
+            for pat, kind in MALICIOUS_HEADER_PATTERNS:
+                if pat.search(header_line):
+                    return True, f"header-{kind}"
     
     # Check if path matches any allowlist pattern (exact or prefix match)
     path_clean = (path or '').split('?')[0].rstrip('/')

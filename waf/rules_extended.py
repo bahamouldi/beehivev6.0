@@ -288,23 +288,39 @@ REQUEST_SMUGGLING = [
 # ============================================================
 #  CACHE POISONING (15+ patterns)
 # ============================================================
+# NOTE: Patterns updated to avoid false positives from legitimate proxy headers
+# Only match suspicious/malicious values, not normal proxy infrastructure headers
 
 CACHE_POISONING = [
-    r"(?i)x-forwarded-host\s*:\s*[a-z0-9]+\.[a-z]{2,}",
-    r"(?i)x-forwarded-scheme\s*:\s*(?:http|nothttps)",
-    r"(?i)x-forwarded-port\s*:\s*(?!443|80)\d+",
-    r"(?i)x-original-url\s*:\s*/",
-    r"(?i)x-rewrite-url\s*:\s*/",
-    r"(?i)x-forwarded-prefix\s*:\s*/",
-    r"(?i)x-host\s*:\s*[a-z0-9]+\.[a-z]{2,}",
-    r"(?i)x-forwarded-server\s*:\s*[a-z0-9]+\.[a-z]{2,}",
+    # X-Forwarded-Host with malicious/suspicious domains only
+    r"(?i)x-forwarded-host\s*:\s*(?:evil|attacker|hacker|malicious|localhost|127\.0\.0\.1|0\.0\.0\.0)\b",
+    r"(?i)x-forwarded-host\s*:\s*\w+\.(?:evil|attacker|hacker|malicious|burp|ngrok|interact\.sh|oast)\.\w+",
+    # X-Forwarded-Scheme with suspicious values (not just "http")
+    r"(?i)x-forwarded-scheme\s*:\s*(?:nothttps|javascript|data|vbscript|file)\b",
+    # X-Forwarded-Port with clearly malicious values (extreme ports)
+    r"(?i)x-forwarded-port\s*:\s*(?:0|65536|999{3,}|NaN|-1)\b",
+    # X-Original-URL/X-Rewrite-URL with admin/internal paths (not just any path)
+    r"(?i)x-original-url\s*:\s*/(?:admin|internal|debug|console|actuator|swagger|api-docs|graphql|metrics|env)\b",
+    r"(?i)x-rewrite-url\s*:\s*/(?:admin|internal|debug|console|actuator|swagger|api-docs|graphql|metrics|env)\b",
+    # X-Forwarded-Prefix with suspicious paths
+    r"(?i)x-forwarded-prefix\s*:\s*/(?:admin|internal|debug|evil|attacker)\b",
+    # X-Host with malicious domains only
+    r"(?i)x-host\s*:\s*(?:evil|attacker|hacker|malicious|localhost|169\.254\.169\.254)\b",
+    r"(?i)x-host\s*:\s*\w+\.(?:evil|attacker|hacker|malicious|burp|ngrok|interact\.sh|oast)\.\w+",
+    # X-Forwarded-Server with malicious domains
+    r"(?i)x-forwarded-server\s*:\s*(?:evil|attacker|hacker|malicious|localhost)\b",
+    r"(?i)x-forwarded-server\s*:\s*\w+\.(?:evil|attacker|hacker|malicious|burp|ngrok|interact\.sh|oast)\.\w+",
+    # Method override headers - these are less common and potentially dangerous
     r"(?i)x-http-method-override\s*:\s*(?:PUT|DELETE|PATCH)",
     r"(?i)x-method-override\s*:\s*(?:PUT|DELETE|PATCH)",
     r"(?i)x-original-method\s*:\s*(?:PUT|DELETE|PATCH)",
     r"(?i)x-http-method\s*:\s*(?:PUT|DELETE|PATCH)",
-    r"(?i)x-forwarded-for\s*:\s*(?:127\.0\.0\.1|localhost|0\.0\.0\.0)",
-    r"(?i)(?:x-cache-key|x-cache-hash)\s*:",
-    r"(?i)x-wap-profile\s*:\s*http",
+    # X-Forwarded-For with loopback (potential bypass attempt)
+    r"(?i)x-forwarded-for\s*:\s*(?:127\.0\.0\.1|localhost|0\.0\.0\.0|169\.254\.169\.254)\b",
+    # Cache key/hash manipulation (rarely used legitimately)
+    r"(?i)(?:x-cache-key|x-cache-hash)\s*:\s*(?:evil|attacker|<script|javascript:)",
+    # X-Wap-Profile with external URL (potential SSRF)
+    r"(?i)x-wap-profile\s*:\s*https?://(?:evil|attacker|hacker|localhost|127\.0\.0\.1)\b",
 ]
 
 

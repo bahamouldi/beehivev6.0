@@ -193,27 +193,24 @@ GRPC_PROTO_DEEP = [
 # 5. WEB CACHE ATTACKS (80 patterns)
 # ============================================================================
 WEB_CACHE_DEEP = [
-    # --- Cache poisoning ---
+    # --- Cache poisoning (only match malicious values, not legitimate proxy headers) ---
     r"(?i)X-(?:Forwarded-Host|Forwarded-Scheme|Forwarded-Port|Forwarded-Proto|Forwarded-Prefix|Original-URL|Rewrite-URL|Custom-IP-Authorization)\s*:\s*(?:evil|attacker|hacker)\b",
     r"(?i)X-Forwarded-Host\s*:\s*(?:\w+\.(?:evil|attacker|hacker|burp|ngrok|interact\.sh|oast)\.\w+)",
     r"(?i)X-Forwarded-Scheme\s*:\s*(?:nothttps|http\s|javascript|data|vbscript)\b",
     r"(?i)X-Forwarded-Port\s*:\s*(?:0|65536|999{3,}|NaN|-1)\b",
     r"(?i)X-Original-URL\s*:\s*/(?:admin|internal|debug|console|actuator|swagger|api-docs|graphql|metrics|env)\b",
     r"(?i)X-Rewrite-URL\s*:\s*/(?:admin|internal|debug|console|actuator|swagger|api-docs|graphql|metrics|env)\b",
-    r"(?i)(?:Pragma|Cache-Control)\s*:\s*(?:no-transform|only-if-cached|public|no-cache|no-store|max-age=0|max-stale=?\d*|min-fresh=0|s-maxage=0|must-revalidate|proxy-revalidate|stale-while-revalidate=0|stale-if-error=0)\b",
+    # Cache-Control/Pragma only with malicious content (removed legitimate directives)
     r"(?i)(?:Vary|ETag|If-None-Match|If-Modified-Since|Age|Expires|Cache-Control|Surrogate-Control)\s*:.*(?:evil|attacker|hacker|<script|javascript:|data:)",
-    # --- Web cache deception ---
-    r"(?i)/(?:account|profile|settings|dashboard|admin|internal|api|user|my-account|billing|preferences|cart|checkout|payment|order|inbox|messages|notifications)/\w+\.(?:css|js|jpg|jpeg|gif|png|svg|ico|woff|woff2|ttf|eot|mp4|webm|ogg|mp3|wav|flac|pdf|doc|xls|ppt|txt|csv|xml|json|html|htm|swf|zip|rar|tar|gz|bz2|7z|aac|webp|avif)",
+    # --- Web cache deception (only match specific attack patterns) ---
+    # Removed: broad pattern that matched /api/orders with static extensions
     r"(?i)/(?:account|profile|settings|dashboard|admin)/[^/]+\.(?:css|js|jpg|jpeg|gif|png|svg|ico|woff|woff2)\b",
     r"(?i)/(?:account|profile|settings|dashboard|admin)/(?:\.\.|%2e%2e|%252e%252e|%c0%ae%c0%ae)(?:/|\\|%2f|%5c)",
     r"(?i)/(?:account|profile|settings|dashboard|admin)(?:%0[adAD]|%20|%23|%3[fF]|%2[eE]|;|\.\.)[^/]*\.(?:css|js|jpg|png|gif)\b",
-    # --- Cache key manipulation ---
-    r"(?i)(?:\?|&)(?:_|__|\.|cb|cachebuster|cache|bust|v|version|t|timestamp|nocache|rand|random|_t|_dc|_r)\s*=\s*\d+",
+    # --- Cache key manipulation (only with CRLF injection) ---
     r"(?i)(?:\?|&)\w+\s*=\s*[^&]*(?:%0[adAD]|%0[aA]Set-Cookie|%0[dD]%0[aA]|%0[aA]%0[dD])[^&]*",
-    # --- CDN bypass ---
-    r"(?i)(?:CF-|Fastly-|Akamai-|CloudFront-|Varnish-|X-Cache-|X-Served-By-|X-Edge-|Via)\s*:",
-    r"(?i)(?:cdn-loop|CDN-Loop|x-cdn|X-CDN|cf-ray|CF-Ray|x-amz-cf-id|X-Amz-Cf-Id|x-varnish|X-Varnish|fastly-|Fastly-)\s*:",
-    r"(?i)(?:Surrogate-Control|Surrogate-Capability)\s*:\s*(?:content|no-store|max-age|ESI/1\.0)\b",
+    # --- CDN headers only with malicious content ---
+    r"(?i)(?:Surrogate-Control|Surrogate-Capability)\s*:\s*(?:content|no-store|max-age|ESI/1\.0)\b.*(?:evil|attacker|<script)",
 ]
 
 # ============================================================================

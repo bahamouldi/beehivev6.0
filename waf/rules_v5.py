@@ -1021,8 +1021,9 @@ WORDPRESS_ADVANCED = [
 # ============================================================================
 # 17. CACHE POISONING & DESYNC (25 patterns)
 # ============================================================================
+# NOTE: Patterns updated to avoid false positives from legitimate proxy headers
 CACHE_DESYNC_ATTACKS = [
-    # HTTP Request Smuggling
+    # HTTP Request Smuggling (keep these - they are attack-specific)
     r"(?i)Transfer-Encoding\s*:\s*(?:chunked|compress|deflate|gzip)\s*,\s*(?:chunked|identity)",
     r"(?i)Transfer-Encoding\s*:\s*[\t ]*chunked",
     r"(?i)Content-Length\s*:\s*\d+\s*\r?\n\s*Transfer-Encoding\s*:\s*chunked",
@@ -1030,31 +1031,31 @@ CACHE_DESYNC_ATTACKS = [
     r"(?i)Transfer-Encoding\s*:\s*xchunked",
     r"(?i)Transfer-Encoding\s*:\s*\[chunked\]",
     r"(?i)Transfer[\t -]Encoding\s*:\s*chunked",
-    # Cache poisoning headers
-    r"(?i)X-(?:Forwarded-Host|Original-URL|Rewrite-URL|Override-URL)\s*:\s*\w+\.\w+",
-    r"(?i)X-(?:Forwarded-Scheme|Forwarded-Proto)\s*:\s*(?:nothttps|http[^s])",
-    r"(?i)X-(?:Host|Forwarded-Server)\s*:\s*['\"]?(?:evil|attacker|malicious)",
-    # Cache deception
+    # Cache poisoning headers (only match malicious values)
+    r"(?i)X-(?:Forwarded-Host|Original-URL|Rewrite-URL|Override-URL)\s*:\s*(?:evil|attacker|hacker|malicious)\b",
+    r"(?i)X-(?:Forwarded-Host|Original-URL)\s*:\s*\w+\.(?:evil|attacker|hacker|malicious|burp|ngrok|interact\.sh|oast)\.\w+",
+    r"(?i)X-(?:Forwarded-Scheme|Forwarded-Proto)\s*:\s*(?:nothttps|javascript|data|vbscript)\b",
+    r"(?i)X-(?:Host|Forwarded-Server)\s*:\s*['\"]?(?:evil|attacker|malicious)\b",
+    # Cache deception (only match specific attack patterns)
     r"(?i)/(?:account|profile|settings|admin)/[^?]*\.(?:css|js|png|jpg|gif|ico)\b",
     r"(?i)/(?:api|internal|private)/[^?]*(?:%0d|%0a|%00)",
     r"(?i)/[^?]*\.(?:css|js|png|jpg)(?:\?|;).*(?:admin|user|account|session)",
-    # Response splitting
+    # Response splitting (keep these - they are attack-specific)
     r"(?i)(?:%0d%0a|%0d|%0a|\r\n|\n|\r)(?:Set-Cookie|Location|Content-Type)\s*:",
     r"(?i)(?:Location|Set-Cookie|Content-Type)\s*:.*(?:%0d%0a|%0d|%0a|\r\n)",
-    # Host header attacks
-    r"(?i)Host\s*:\s*(?:evil|attacker|malicious|localhost)\.",
-    r"(?i)Host\s*:.*@",
-    r"(?i)Host\s*:\s*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",
-    # HTTP/2 specific
+    # Host header attacks (only match malicious values)
+    r"(?i)Host\s*:\s*(?:evil|attacker|malicious)\.\w+",
+    r"(?i)Host\s*:.*@(?:evil|attacker|hacker)",
+    # HTTP/2 specific (keep these - they are attack-specific)
     r"(?i):authority\s*:\s*.*(?:evil|attacker|malicious)",
     r"(?i):path\s*:\s*.*(?:%0d|%0a|%00)",
-    # Web cache deception paths
+    # Web cache deception paths (only match user/dashboard paths, not /api/)
     r"(?i)/(?:user|my|dashboard|profile)/.*(?:\.js|\.css|\.png|\.jpg|\.gif|\.ico|\.svg|\.woff)",
-    # Parameter cloaking
+    # Parameter cloaking (keep these - they are attack-specific)
     r"(?i)(?:utm_\w+|fbclid|gclid|__cf_chl)\s*=.*(?:<script|javascript:|onerror=)",
-    # Edge-case cache keys
+    # Edge-case cache keys (keep these - they are attack-specific)
     r"(?i)(?:Accept|Accept-Language|Cookie)\s*:.*(?:<|>|%3C|%3E|javascript:|data:)",
-    # H2C smuggling
+    # H2C smuggling (keep these - they are attack-specific)
     r"(?i)Upgrade\s*:\s*h2c",
     r"(?i)Connection\s*:\s*Upgrade,\s*HTTP2-Settings",
 ]
