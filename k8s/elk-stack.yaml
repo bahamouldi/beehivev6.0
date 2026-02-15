@@ -207,7 +207,16 @@ data:
 
       # ── 6. Enrichissement des événements bloqués ──
       if [event_type] == "blocked" or [blocked] or [status_code] == 403 {
-        mutate { add_tag => [ "security", "blocked" ] }
+        mutate { 
+          add_tag => [ "security", "blocked" ]
+          add_field => { "blocked_tmp" => "true" }
+        }
+        mutate {
+          convert => { "blocked_tmp" => "boolean" }
+        }
+        mutate {
+          rename => { "blocked_tmp" => "blocked" }
+        }
 
         # === Regex WAF Rules ===
         if [block_reason] == "regex-sqli" {

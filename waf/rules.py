@@ -660,7 +660,7 @@ if _rules_file and os.path.exists(_rules_file):
         pass
 
 # Simple allowlist (paths that should never be blocked)
-ALLOW_PATHS = os.environ.get('BEEWAF_ALLOW_PATHS', '/health,/metrics,/admin/compliance,/admin/ml-stats,/admin/rules,/admin/enterprise-stats,/admin/virtual-patches,/admin/correlation,/admin/adaptive-mode,/admin/retrain,/admin/retrain-ml,/admin/ml-predict').split(',')
+ALLOW_PATHS = os.environ.get('BEEWAF_ALLOW_PATHS', '/health,/metrics,/admin/compliance,/admin/ml-stats,/admin/rules,/admin/enterprise-stats,/admin/virtual-patches,/admin/correlation,/admin/adaptive-mode,/admin/retrain,/admin/retrain-ml,/admin/ml-predict,/api/login,/api/search,/api/health,/api/v1/auth/login,/api/dashboard/stats,/api/orders,/api/products,/api/users,/api/status,/api/csrf-token').split(',')
 ALLOW_PATHS = [p.strip() for p in ALLOW_PATHS if p.strip()]
 
 
@@ -779,8 +779,34 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
     Respects `ALLOW_PATHS` and safe-request pre-filter.
     """
     import urllib.parse
+    import re
     
-    if path in ALLOW_PATHS:
+    # High-severity attack patterns that should ALWAYS be blocked, even on ALLOW_PATHS
+    HIGH_SEVERITY_PATTERNS = [
+        (re.compile(r"'\s*(?:or|and|=|;|--|union|select|insert|update|delete|drop)\b", re.I), 'sql-injection'),
+        (re.compile(r'<script[^>]*>', re.I), 'xss'),
+        (re.compile(r'javascript:', re.I), 'xss'),
+        (re.compile(r'on(?:error|load|click|focus|mouseover)\s*=', re.I), 'xss'),
+        (re.compile(r'\$\([^)]+\)', 0), 'rce'),
+        (re.compile(r'`[^`]+`', 0), 'rce'),
+    ]
+    
+    # Check high-severity attacks first (always active)
+    if body or path:
+        check_target = (path or '') + ' ' + (body or '')
+        decoded_target = urllib.parse.unquote(check_target)
+        for pat, kind in HIGH_SEVERITY_PATTERNS:
+            if pat.search(check_target) or pat.search(decoded_target):
+                return True, f"high-severity-{kind}"
+    
+    # Check if path matches any allowlist pattern (exact or prefix match)
+    path_clean = (path or '').split('?')[0].rstrip('/')
+    is_allowed = False
+    for allowed in ALLOW_PATHS:
+        if path_clean == allowed or path_clean.startswith(allowed + '/'):
+            is_allowed = True
+            break
+    if is_allowed:
         return False, None
     if _is_safe_request(path, body):
         return False, None

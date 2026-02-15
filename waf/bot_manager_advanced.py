@@ -612,7 +612,11 @@ class AdvancedBotManager:
         self.behavioral = BehavioralAnalyzer()
         self.credential_detector = CredentialStuffingDetector()
         self.ip_scores = defaultdict(lambda: {"score": 0, "last_check": 0})
-        self.whitelisted = set()
+        
+        # Load trusted IPs from environment
+        import os
+        trusted_ips = os.environ.get('BEEWAF_TRUSTED_IPS', '127.0.0.1,localhost')
+        self.whitelisted = set([ip.strip() for ip in trusted_ips.split(',') if ip.strip()])
         self.blacklisted = set()
         self.stats = {
             "challenges_issued": 0,

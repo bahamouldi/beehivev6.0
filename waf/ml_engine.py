@@ -719,6 +719,7 @@ class BeeWAFMLEngine:
         # e.g., "script writing course" is safe, "<script>" is not
         # e.g., "alert system monitoring" is safe, "alert(1)" is not
         import re as _re
+        dangerous_words = ['script', 'alert', 'iframe', 'object', 'embed', 'svg', 'onmouseover']
         dangerous_word_contexts = {
             'script': [r'<\s*script', r'script\s*>', r'script\s*\(', r'/script'],
             'alert': [r'alert\s*\(', r'alert\s*`', r'<[^>]*alert'],

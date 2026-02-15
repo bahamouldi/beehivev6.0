@@ -1,0 +1,92 @@
+# =============================================================================
+# BeeWAF — Configuration Reverse Proxy vers idts-back
+# Architecture: Internet → HAProxy → Ingress → BeeWAF → idts-back
+# =============================================================================
+
+# 1. Mettre à jour le deployment BeeWAF avec BACKEND_URL
+# Ce patch ajoute la variable d'environnement BACKEND_URL pour forwarder
+# le trafic légitime vers l'application idts-back
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beewaf
+  namespace: beewaf
+  labels:
+    app: beewaf
+    version: v6.0
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: beewaf
+  template:
+    metadata:
+      labels:
+        app: beewaf
+        version: v6.0
+      annotations:
+        co.elastic.logs/enabled: "true"
+        co.elastic.logs/json.keys_under_root: "true"
+        co.elastic.logs/json.add_error_key: "true"
+    spec:
+      nodeName: testhamaster1
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: beewaf
+        image: docker.io/library/beewaf:latest
+        imagePullPolicy: Never
+        command: ["uvicorn"]
+        args: ["app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        env:
+        - name: BEEWAF_MODEL_PATH
+          value: "/app/models/model.pkl"
+        - name: BEEWAF_TRAIN_DATA
+          value: "/app/data/train_demo.csv"
+        - name: ML_MODE
+          value: "advanced"
+        # === REVERSE PROXY : forward clean traffic to idts-back ===
+        - name: BACKEND_URL
+          value: "http://idts-back.idts-test.svc.cluster.local:80"
+        - name: BEEWAF_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: beewaf-secrets
+              key: BEEWAF_API_KEY
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 5
