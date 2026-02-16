@@ -848,6 +848,12 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
     
     for pat, kind in COMPILED_RULES:
         if pat.search(target) or pat.search(decoded_target):
+            # Debug: log the matching pattern for cache_poisoning
+            if 'cache' in kind.lower() or 'poison' in kind.lower():
+                import logging
+                logger = logging.getLogger('beewaf')
+                logger.warning(f"DEBUG cache_poisoning match - kind: {kind}, pattern: {pat.pattern[:100]}...")
+                logger.warning(f"DEBUG target: {target[:500]}...")
             return True, f"regex-{kind}"
     return False, None
 

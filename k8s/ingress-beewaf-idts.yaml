@@ -13,24 +13,15 @@ metadata:
   name: beewaf-protected-idts
   namespace: beewaf
   annotations:
-    # Utiliser nginx ingress controller
-    kubernetes.io/ingress.class: nginx
-    # Cert-manager pour TLS automatique
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
     # Configuration nginx pour BeeWAF
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
-    # Headers de sécurité
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      add_header X-Frame-Options "SAMEORIGIN" always;
-      add_header X-Content-Type-Options "nosniff" always;
-      add_header X-XSS-Protection "1; mode=block" always;
-      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     # Passer l'IP réelle du client
     nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
     nginx.ingress.kubernetes.io/forwarded-for-header: "X-Forwarded-For"
 spec:
+  ingressClassName: nginx
   tls:
   - hosts:
     - secure.idts.dpc.com.tn
