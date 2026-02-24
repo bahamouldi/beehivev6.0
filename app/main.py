@@ -53,18 +53,46 @@ from waf import compliance_engine_v5
 BACKEND_URL = os.environ.get('BACKEND_URL', '')
 _proxy_client = None
 
-def get_proxy_client():
-    """Lazy init httpx async client for reverse proxy."""
-    global _proxy_client
-    if _proxy_client is None and BACKEND_URL:
-        _proxy_client = httpx.AsyncClient(
-            base_url=BACKEND_URL,
+# === MULTI-BACKEND ROUTING ===
+# BACKEND_MAP allows routing to different backends based on Host header.
+# Format: JSON object {"hostname": "http://backend-url"}
+# Example: {"dev.idts.dpc.com.tn": "http://idts-front-service.idts-test.svc.cluster.local:80"}
+# Requests not matching any key fall back to BACKEND_URL.
+_BACKEND_MAP_RAW = os.environ.get('BACKEND_MAP', '{}')
+try:
+    BACKEND_MAP = json.loads(_BACKEND_MAP_RAW)
+except json.JSONDecodeError:
+    BACKEND_MAP = {}
+_proxy_clients = {}  # Cache per-host httpx clients
+
+def _get_client_for_url(base_url: str) -> httpx.AsyncClient:
+    """Get or create an httpx client for a given base URL."""
+    if base_url not in _proxy_clients:
+        _proxy_clients[base_url] = httpx.AsyncClient(
+            base_url=base_url,
             timeout=httpx.Timeout(30.0, connect=10.0),
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
             follow_redirects=False,
-            verify=False,  # Backend is internal, no TLS verification needed
+            verify=False,
         )
-    return _proxy_client
+    return _proxy_clients[base_url]
+
+def get_proxy_client(host: str = '') -> httpx.AsyncClient:
+    """Get the right httpx client based on Host header.
+    
+    If BACKEND_MAP has an entry for this host, use that backend.
+    Otherwise fall back to the default BACKEND_URL.
+    """
+    # Check host-specific backend first
+    if host and BACKEND_MAP:
+        clean_host = host.split(':')[0].lower().strip()
+        for pattern, url in BACKEND_MAP.items():
+            if clean_host == pattern.lower().strip():
+                return _get_client_for_url(url)
+    # Fall back to default
+    if BACKEND_URL:
+        return _get_client_for_url(BACKEND_URL)
+    return None
 
 # JSON Logging Configuration for ELK Stack
 class CustomJsonFormatter(JsonFormatter):
@@ -160,25 +188,12 @@ def startup_event():
         if loaded:
             log.info('Loaded advanced ML engine (3 models) from %s', ML_ENGINE_PATH)
         else:
-            log.info('Advanced ML engine not found at %s', ML_ENGINE_PATH)
-            # Try to train if CSIC data exists
-            if os.path.exists(CSIC_DATA):
-                log.info('Training advanced ML engine from CSIC data...')
-                result = ml_engine.train_from_csic(CSIC_DATA, ML_ENGINE_PATH)
-                if result.get('ok'):
-                    log.info('Advanced ML training complete: F1=%.4f', 
-                            result['models']['ensemble']['f1'])
-                else:
-                    log.warning('Advanced ML training failed: %s', result)
-            else:
-                log.warning('CSIC data not found at %s, advanced ML disabled', CSIC_DATA)
+            log.warning('Advanced ML engine not available at %s — running in regex-only mode (use /admin/retrain-ml to train)', ML_ENGINE_PATH)
     
     # Load legacy model (backwards compatibility)
     loaded = anomaly.load_model(MODEL_PATH)
     if not loaded:
-        log.info('No legacy model found, training from %s', TRAIN_DATA)
-        res = anomaly.train_from_file(TRAIN_DATA, save_path=MODEL_PATH)
-        log.info('Legacy training result: %s', res)
+        log.warning('No legacy model found at %s — regex-only mode (use /admin/retrain to train)', MODEL_PATH)
     else:
         log.info('Loaded legacy model from %s', MODEL_PATH)
     
@@ -397,6 +412,15 @@ async def waf_middleware(request: Request, call_next):
                 return JSONResponse(status_code=400, content={"blocked": True, "reason": "invalid-range-header"})
     # ========== END RANGE HEADER VALIDATION ==========
     
+    # ========== CORS PREFLIGHT FAST PATH ==========
+    # OPTIONS requests for CORS preflight are not attack vectors - they're browser
+    # protocol negotiation and contain no payload. They should never reach regex scanning.
+    # Skip all WAF checks and let the backend handle CORS response headers.
+    if method == "OPTIONS":
+        ACTIVE_REQUESTS.dec()
+        return await call_next(request)
+    # ========== END CORS PREFLIGHT FAST PATH ==========
+    
     # Combine path and query for WAF checking
     full_path = f"{path}?{query_string}" if query_string else path
     
@@ -405,6 +429,27 @@ async def waf_middleware(request: Request, call_next):
     if path in ['/metrics', '/health'] and not query_string:
         ACTIVE_REQUESTS.dec()
         return await call_next(request)
+
+    # ========== STATIC FILE FAST-PATH (critical performance fix) ==========
+    # Angular/React/Vue apps serve large JS/CSS bundles from root path.
+    # Scanning 1MB+ JS files through 9994 regex rules takes 40+ seconds,
+    # blocks the async event loop, and causes 503 for concurrent requests.
+    # Security checks already passed: IP blocklist, path normalization,
+    # traversal detection, host validation, sensitive path blocking.
+    _STATIC_EXTS = {
+        '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
+        '.woff', '.woff2', '.ttf', '.eot', '.map', '.webp', '.avif',
+        '.mp4', '.mp3', '.webm', '.ogg', '.pdf', '.zip',
+        '.mjs', '.chunk.js', '.json',
+    }
+    _ext_check = path.lower().rsplit('.', 1)
+    if len(_ext_check) == 2 and method in ('GET', 'HEAD') and f'.{_ext_check[1]}' in _STATIC_EXTS:
+        ACTIVE_REQUESTS.dec()
+        response = await call_next(request)
+        latency = time.time() - start_time
+        REQUEST_LATENCY.labels(method=method, endpoint=path).observe(latency)
+        return response
+    # ========== END STATIC FILE FAST-PATH ==========
 
     # ========== v5.0: DDoS PROTECTION ==========
     try:
@@ -775,6 +820,14 @@ async def waf_middleware(request: Request, call_next):
                 import re as _re_strip
                 check_value = _re_strip.sub(r'^https?://', '', header_value)
             blocked, reason = rules.check_regex_rules('', check_value, {})
+            
+            # EXCEPTION: Referer headers naturally contain paths (/dashboard/, /admin/, etc.)
+            # IDOR/access-control rules matching on referer are almost always false positives.
+            # Real attacks (XSS, SQLi, RCE) injected into the referer are still caught above.
+            _REFERER_FP_CATEGORIES = {'regex-idor_access', 'regex-race_timing'}
+            if blocked and header_name == 'referer' and reason in _REFERER_FP_CATEGORIES:
+                blocked = False
+                
             if blocked:
                 log.warning('Request blocked - malicious header', extra={
                     'event': 'blocked', 'client_ip': client, 'method': method,
@@ -1186,11 +1239,12 @@ def retrain_ml():
         raise HTTPException(status_code=500, detail=result)
     return result
 
-@app.get('/')
-def index():
-    total_rules = len(rules.list_rules())
-    return {
-        "service": "BeeWAF Enterprise",
+if not BACKEND_URL:
+    @app.get('/')
+    def index():
+        total_rules = len(rules.list_rules())
+        return {
+            "service": "BeeWAF Enterprise",
         "version": "5.0.0",
         "status": "running",
         "modules": [
@@ -1329,10 +1383,11 @@ async def admin_adaptive_mode(request: Request):
     adaptive_learning.set_mode(mode)
     return {"mode": mode, "status": "updated"}
 
-@app.post('/echo')
-async def echo(request: Request):
-    body = await request.body()
-    return JSONResponse(content=(body.decode('utf-8', errors='ignore') if body else ''))
+if not BACKEND_URL:
+    @app.post('/echo')
+    async def echo(request: Request):
+        body = await request.body()
+        return JSONResponse(content=(body.decode('utf-8', errors='ignore') if body else ''))
 
 
 # =============================================================================
@@ -1341,11 +1396,16 @@ async def echo(request: Request):
 # =============================================================================
 if BACKEND_URL:
     log.info(f"🔀 Reverse Proxy Mode: forwarding clean traffic to {BACKEND_URL}")
+    if BACKEND_MAP:
+        for h, u in BACKEND_MAP.items():
+            log.info(f"🔀 Host routing: {h} → {u}")
 
     @app.api_route('/{path:path}', methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS','HEAD'])
-    async def reverse_proxy(request: Request, path: str):
+    @app.api_route('/', methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS','HEAD'], include_in_schema=False)
+    async def reverse_proxy(request: Request, path: str = ''):
         """Forward requests that passed all WAF checks to the backend app."""
-        client = get_proxy_client()
+        req_host = request.headers.get('host', '')
+        client = get_proxy_client(req_host)
         if not client:
             return JSONResponse(status_code=502, content={"error": "Backend not configured"})
 
@@ -1380,10 +1440,12 @@ if BACKEND_URL:
             )
 
             # Return backend response
+            # Strip hop-by-hop + server/date to avoid duplicate header warnings
+            # from nginx ingress (uvicorn adds its own server/date headers)
             resp_headers = {k: v for k, v in backend_resp.headers.items()
                            if k.lower() not in ('content-encoding', 'content-length',
-                                                 'transfer-encoding', 'connection')}
-
+                                                  'transfer-encoding', 'connection',
+                                                  'server', 'date')}
             return Response(
                 content=backend_resp.content,
                 status_code=backend_resp.status_code,

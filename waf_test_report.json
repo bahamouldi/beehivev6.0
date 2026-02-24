@@ -1,0 +1,238 @@
+{
+    "total": 22,
+    "passed": 13,
+    "failed": 9,
+    "details": [
+        {
+            "test": "Normal Request",
+            "url": "https://dev.idts.dpc.com.tn/login",
+            "expected_status": [
+                200,
+                304,
+                404,
+                301
+            ],
+            "actual_status": 429,
+            "pass": false,
+            "response_snippet": "..."
+        },
+        {
+            "test": "SQL Injection (URL)",
+            "url": "https://dev.idts.dpc.com.tn/api/users?id=1'+OR+1=1--",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"ml-sqli\",\"attack_score\":0.861}"
+        },
+        {
+            "test": "SQL Injection (Union)",
+            "url": "https://dev.idts.dpc.com.tn/api/search?q=UNION+SELECT+version()",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 200,
+            "pass": false,
+            "response_snippet": "..."
+        },
+        {
+            "test": "XSS (Reflected)",
+            "url": "https://dev.idts.dpc.com.tn/?search=<script>alert(1)</script>",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 429,
+            "pass": false,
+            "response_snippet": "..."
+        },
+        {
+            "test": "XSS (Event Handler)",
+            "url": "https://dev.idts.dpc.com.tn/login?error=1+onmouseover=alert(1)",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"high-severity-xss\"}"
+        },
+        {
+            "test": "XSS (JavaScript URI)",
+            "url": "https://dev.idts.dpc.com.tn/redirect?url=javascript:alert('XSS')",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"high-severity-xss\"}"
+        },
+        {
+            "test": "Command Injection (Basic)",
+            "url": "https://dev.idts.dpc.com.tn/api/ping?host=127.0.0.1;cat+/etc/passwd",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 429,
+            "pass": false,
+            "response_snippet": "..."
+        },
+        {
+            "test": "Command Injection (Backticks)",
+            "url": "https://dev.idts.dpc.com.tn/api/exec?cmd=`id`",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"high-severity-rce\"}"
+        },
+        {
+            "test": "Command Injection (Pipe)",
+            "url": "https://dev.idts.dpc.com.tn/api/test?var=value|whoami",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"regex-cmdi\"}"
+        },
+        {
+            "test": "Path Traversal (Basic)",
+            "url": "https://dev.idts.dpc.com.tn/api/download?file=../../../../etc/passwd",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 429,
+            "pass": false,
+            "response_snippet": "..."
+        },
+        {
+            "test": "Path Traversal (Encoded)",
+            "url": "https://dev.idts.dpc.com.tn/api/view?doc=%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"regex-path-traversal\"}"
+        },
+        {
+            "test": "SSRF (AWS Metadata)",
+            "url": "https://dev.idts.dpc.com.tn/api/fetch?url=http://169.254.169.254/latest/meta-data/",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"regex-ssrf\"}"
+        },
+        {
+            "test": "SSRF (Localhost)",
+            "url": "https://dev.idts.dpc.com.tn/api/proxy?target=http://127.0.0.1:8080/admin",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 429,
+            "pass": false,
+            "response_snippet": "..."
+        },
+        {
+            "test": "Malicious Scanner (Nikto)",
+            "url": "https://dev.idts.dpc.com.tn/",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"known-attack-tool\"}"
+        },
+        {
+            "test": "Malicious Scanner (Nmap)",
+            "url": "https://dev.idts.dpc.com.tn/",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"known-attack-tool\"}"
+        },
+        {
+            "test": "SQLMap",
+            "url": "https://dev.idts.dpc.com.tn/",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 429,
+            "pass": false,
+            "response_snippet": "..."
+        },
+        {
+            "test": "Log4Shell (JNDI)",
+            "url": "https://dev.idts.dpc.com.tn/",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"exploit-campaign\"}"
+        },
+        {
+            "test": "Host Header Poisoning",
+            "url": "https://dev.idts.dpc.com.tn/",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"c2-callback\"}"
+        },
+        {
+            "test": "NoSQL Injection (JSON Body)",
+            "url": "https://dev.idts.dpc.com.tn/api/auth/login",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 429,
+            "pass": false,
+            "response_snippet": "..."
+        },
+        {
+            "test": "Deserialization (Java)",
+            "url": "https://dev.idts.dpc.com.tn/api/upload",
+            "expected_status": [
+                403
+            ],
+            "actual_status": 403,
+            "pass": true,
+            "response_snippet": "{\"blocked\":true,\"reason\":\"regex-deserialization\"}"
+        },
+        {
+            "test": "Valid Angular SPA Route",
+            "url": "https://dev.idts.dpc.com.tn/dashboard/conducteur",
+            "expected_status": [
+                200,
+                304,
+                404,
+                301
+            ],
+            "actual_status": 200,
+            "pass": true,
+            "response_snippet": "..."
+        },
+        {
+            "test": "Valid Complex API Call",
+            "url": "https://dev.idts.dpc.com.tn/api/factures/getFacturesByChantierAndDate",
+            "expected_status": [
+                200,
+                304,
+                404,
+                301,
+                401,
+                500
+            ],
+            "actual_status": 429,
+            "pass": false,
+            "response_snippet": "..."
+        }
+    ]
+}

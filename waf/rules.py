@@ -660,7 +660,22 @@ if _rules_file and os.path.exists(_rules_file):
         pass
 
 # Simple allowlist (paths that should never be blocked)
-ALLOW_PATHS = os.environ.get('BEEWAF_ALLOW_PATHS', '/health,/metrics,/admin/compliance,/admin/ml-stats,/admin/rules,/admin/enterprise-stats,/admin/virtual-patches,/admin/correlation,/admin/adaptive-mode,/admin/retrain,/admin/retrain-ml,/admin/ml-predict,/api/login,/api/search,/api/health,/api/v1/auth/login,/api/dashboard/stats,/api/orders,/api/products,/api/users,/api/status,/api/csrf-token').split(',')
+# Includes all IDTS application API endpoints to prevent false positives
+_DEFAULT_ALLOW = (
+    '/health,/metrics,/admin/compliance,/admin/ml-stats,/admin/rules,'
+    '/admin/enterprise-stats,/admin/virtual-patches,/admin/correlation,'
+    '/admin/adaptive-mode,/admin/retrain,/admin/retrain-ml,/admin/ml-predict,'
+    '/api/login,/api/auth/login,/api/auth/register,/api/search,/api/health,'
+    '/api/v1/auth/login,/api/dashboard/stats,/api/orders,/api/products,'
+    '/api/users,/api/status,/api/csrf-token,/api/auth,'
+    # ── IDTS application endpoints ──
+    '/api/chantiers,/api/clients,/api/factures,/api/fournisseurs,'
+    '/api/roles,/api/pointages,/api/pointageChefChantierAndConducteur,'
+    '/api/taches,/api/salaires,/api/remboursements,/api/notifications,'
+    '/api/user-details,/api/fileFacture,/api/uploadPhoto,/api/payes,'
+    '/api/chantierUsers,/api/notification,/api/sendNotificationForUserNotPointedToday'
+)
+ALLOW_PATHS = os.environ.get('BEEWAF_ALLOW_PATHS', _DEFAULT_ALLOW).split(',')
 ALLOW_PATHS = [p.strip() for p in ALLOW_PATHS if p.strip()]
 
 
@@ -674,10 +689,15 @@ def _headers_to_text(headers: Dict[str, str]) -> str:
         # Skip standard browser headers to avoid FPs with 10K rules
         'referer', 'accept', 'accept-language', 'accept-charset',
         'content-type', 'origin', 'cache-control', 'pragma',
-        'if-none-match', 'if-modified-since', 'upgrade-insecure-requests',
+        'if-none-match', 'if-modified-since', 'if-range', 'if-match', 'if-unmodified-since',
+        'upgrade-insecure-requests',
         'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site', 'sec-fetch-user',
         'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform',
         'dnt', 'te', 'transfer-encoding',
+        # Proxy/load-balancer tracing headers (HAProxy, nginx, etc.)
+        'x-request-id', 'x-correlation-id', 'x-trace-id', 'idempotency-key',
+        'x-forwarded-host', 'x-forwarded-port', 'x-forwarded-server',
+        'x-forwarded-prefix', 'x-forwarded-scheme',
     }
     return ' '.join(f"{k}:{v}" for k, v in headers.items() if k.lower() not in _SKIP_HEADERS)
 
@@ -686,6 +706,8 @@ def _headers_to_text(headers: Dict[str, str]) -> str:
 _SAFE_PATH_PREFIXES = (
     '/static/', '/assets/', '/css/', '/js/', '/images/', '/img/', '/fonts/',
     '/media/', '/favicon', '/manifest', '/sw.js', '/service-worker',
+    # IDTS Angular SPA: all /dashboard/* routes are frontend-rendered
+    '/dashboard/',
 )
 _SAFE_PATH_EXACT = {
     '/register', '/login', '/logout', '/signup', '/signin', '/signout',
@@ -694,12 +716,19 @@ _SAFE_PATH_EXACT = {
     '/sitemap.xml', '/robots.txt', '/feed.xml', '/rss.xml', '/atom.xml',
     '/manifest.json', '/browserconfig.xml', '/crossdomain.xml',
     '/.well-known/security.txt', '/security.txt', '/humans.txt', '/ads.txt',
+    # IDTS Angular routes
+    '/forgetPassword', '/changePassword', '/erreur',
 }
+
+_SPA_ROUTE_PREFIXES = ('/dashboard/',)
 
 def _is_safe_request(path: str, body: str) -> bool:
     """Fast pre-filter: return True if the request is obviously safe."""
     clean = (path or '').split('?')[0].rstrip('/')
     if clean in _SAFE_PATH_EXACT:
+        return True
+    # SPA routes: Angular frontend handles all /dashboard/* paths internally
+    if any(clean.startswith(p.rstrip('/')) for p in _SPA_ROUTE_PREFIXES):
         return True
     if any(clean.startswith(p) for p in _SAFE_PATH_PREFIXES):
         ext = clean.rsplit('.', 1)[-1] if '.' in clean else ''
@@ -708,7 +737,7 @@ def _is_safe_request(path: str, body: str) -> bool:
             return True
     # Nested resource paths like /orders/123, /products/456
     import re as _re
-    if _re.match(r'^/(?:orders|products|users|items|posts|articles|categories|tags|comments|reviews|invoices|shipments|carts|wishlist)/[\w-]+$', clean):
+    if _re.match(r'^/(?:orders|products|users|items|posts|articles|categories|tags|comments|reviews|invoices|shipments|carts|wishlist|chantiers|clients|factures|fournisseurs|roles|pointages|taches|salaires|remboursements|notifications|payes|chantierUsers)/[\w-]+$', clean):
         return True
     # Search queries with simple terms (no special attack chars)
     import urllib.parse as _up
@@ -781,6 +810,8 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
     import urllib.parse
     import re
     
+    # Note: DEBUG header logging removed for production performance
+    
     # High-severity attack patterns that should ALWAYS be blocked, even on ALLOW_PATHS
     HIGH_SEVERITY_PATTERNS = [
         (re.compile(r"'\s*(?:or|and|=|;|--|union|select|insert|update|delete|drop)\b", re.I), 'sql-injection'),
@@ -824,6 +855,10 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
             header_line = f"{h_name}: {h_value}"
             for pat, kind in MALICIOUS_HEADER_PATTERNS:
                 if pat.search(header_line):
+                    # Debug: log the matching pattern
+                    import logging
+                    logger = logging.getLogger('beewaf')
+                    logger.warning(f"DEBUG HEADER match - header: {header_line}, kind: {kind}, pattern: {pat.pattern}")
                     return True, f"header-{kind}"
     
     # Check if path matches any allowlist pattern (exact or prefix match)
@@ -848,12 +883,6 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
     
     for pat, kind in COMPILED_RULES:
         if pat.search(target) or pat.search(decoded_target):
-            # Debug: log the matching pattern for cache_poisoning
-            if 'cache' in kind.lower() or 'poison' in kind.lower():
-                import logging
-                logger = logging.getLogger('beewaf')
-                logger.warning(f"DEBUG cache_poisoning match - kind: {kind}, pattern: {pat.pattern[:100]}...")
-                logger.warning(f"DEBUG target: {target[:500]}...")
             return True, f"regex-{kind}"
     return False, None
 
