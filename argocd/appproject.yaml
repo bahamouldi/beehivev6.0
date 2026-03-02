@@ -1,0 +1,70 @@
+# =============================================================================
+# ArgoCD — AppProject pour BeeWAF
+# =============================================================================
+# Ce AppProject définit les permissions et les destinations de déploiement
+# pour l'application BeeWAF dans ArgoCD.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: beewaf-project
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: beewaf
+    app.kubernetes.io/component: argocd-project
+spec:
+  # Description du projet
+  description: "BeeWAF - Web Application Firewall Project"
+  
+  # Sources autorisées (repos Git)
+  sourceRepos:
+    - '*'  # En production, limiter aux repos spécifiques
+    # - 'git@github.com:votre-org/beewaf-k8s-manifests.git'
+    # - 'https://github.com/votre-org/beewaf-k8s-manifests.git'
+  
+  # Destinations autorisées (clusters Kubernetes)
+  destinations:
+    # Cluster local (in-cluster)
+    - namespace: beewaf
+      server: https://kubernetes.default.svc
+    # Cluster de production (si cluster distant)
+    # - namespace: beewaf
+    #   server: https://production-cluster:6443
+    # Cluster de dev
+    # - namespace: beewaf-dev
+    #   server: https://dev-cluster:6443
+  
+  # Namespaces autorisés pour la création de ressources
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRole
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRoleBinding
+    - group: 'networking.k8s.io'
+      kind: IngressClass
+    - group: 'apiextensions.k8s.io'
+      kind: CustomResourceDefinition
+  
+  # Ressources autorisées au niveau namespace
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  
+  # Sync windows (optionnel - pour contrôler quand les syncs peuvent se produire)
+  # syncWindows:
+  #   - kind: allow
+  #     schedule: '10 1 * * *'
+  #     duration: 1h
+  #     applications:
+  #       - 'beewaf-prod'
+  
+  # Roles pour les utilisateurs (optionnel)
+  # roles:
+  #   - name: admin
+  #     description: Admin access to BeeWAF project
+  #     policies:
+  #       - p, proj:beewaf-project:admin, applications, *, beewaf-project/*, allow
+  #     groups:
+  #       - beewaf-admins

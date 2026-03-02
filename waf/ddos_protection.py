@@ -25,6 +25,21 @@ from typing import Optional
 
 logger = logging.getLogger("beewaf.ddos")
 
+# Internal/infrastructure IPs that must NEVER be blocked by DDoS engine
+# (K8s node IPs, HAProxy, loopback — blocking these blocks ALL users)
+_INFRA_TRUSTED = {'127.0.0.1', '::1', '207.180.211.157'}
+_INFRA_PREFIXES = (
+    '192.168.', '10.', '172.16.', '172.17.', '172.18.', '172.19.',
+    '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.',
+    '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.',
+)
+
+def _is_infra_ip(ip: str) -> bool:
+    """Check if IP is internal infrastructure — must NEVER be blocked."""
+    if not ip:
+        return True
+    return ip in _INFRA_TRUSTED or ip.startswith(_INFRA_PREFIXES)
+
 
 # ============================================================================
 # CONNECTION TRACKER
@@ -33,48 +48,61 @@ logger = logging.getLogger("beewaf.ddos")
 class ConnectionTracker:
     """Track active connections per IP for flood detection."""
 
-    def __init__(self, max_per_ip: int = 50, max_total: int = 10000):
+    def __init__(self, max_per_ip: int = 500, max_total: int = 50000):
         self.max_per_ip = max_per_ip
         self.max_total = max_total
         self.connections = defaultdict(int)
         self.total = 0
         self.lock = Lock()
         self.stats = {"rejected": 0, "peak_total": 0, "peak_per_ip": 0}
+        # Request-based tracking (not connection-based for HTTP/1.1 keep-alive)
+        self.request_counts = defaultdict(lambda: deque(maxlen=1000))
+        self.last_cleanup = time.time()
+
+    def check_request_rate(self, client_ip: str) -> dict:
+        """Check request rate per IP (more accurate than connection tracking for HTTP)."""
+        now = time.time()
+        
+        # Periodic cleanup every 60 seconds
+        if now - self.last_cleanup > 60:
+            self._cleanup_stale_ips(now)
+            self.last_cleanup = now
+        
+        with self.lock:
+            self.request_counts[client_ip].append(now)
+            
+            # Count requests in last 60 seconds
+            cutoff = now - 60
+            recent_requests = sum(1 for t in self.request_counts[client_ip] if t > cutoff)
+            
+            # Allow up to 300 requests per minute per IP (very generous)
+            if recent_requests > 300:
+                self.stats["rejected"] += 1
+                return {
+                    "allowed": False,
+                    "reason": f"request_flood:requests={recent_requests}/300 per minute",
+                    "requests": recent_requests
+                }
+            
+            return {"allowed": True, "requests": recent_requests}
+
+    def _cleanup_stale_ips(self, now: float):
+        """Remove IPs with no recent activity."""
+        cutoff = now - 300  # 5 minutes
+        with self.lock:
+            stale = [ip for ip, times in self.request_counts.items() 
+                     if not any(t > cutoff for t in times)]
+            for ip in stale:
+                del self.request_counts[ip]
 
     def open_connection(self, client_ip: str) -> dict:
         """Register a new connection. Returns whether it should be allowed."""
-        with self.lock:
-            self.connections[client_ip] += 1
-            self.total += 1
-
-            per_ip = self.connections[client_ip]
-            self.stats["peak_total"] = max(self.stats["peak_total"], self.total)
-            self.stats["peak_per_ip"] = max(self.stats["peak_per_ip"], per_ip)
-
-            if per_ip > self.max_per_ip:
-                self.stats["rejected"] += 1
-                return {
-                    "allowed": False,
-                    "reason": f"connection_flood:per_ip={per_ip}/{self.max_per_ip}",
-                    "connections": per_ip
-                }
-            if self.total > self.max_total:
-                self.stats["rejected"] += 1
-                return {
-                    "allowed": False,
-                    "reason": f"total_connection_limit:{self.total}/{self.max_total}",
-                    "connections": per_ip
-                }
-
-            return {"allowed": True, "connections": per_ip}
+        # Use request-based rate limiting instead of connection tracking
+        return self.check_request_rate(client_ip)
 
     def close_connection(self, client_ip: str):
-        with self.lock:
-            if self.connections[client_ip] > 0:
-                self.connections[client_ip] -= 1
-                self.total -= 1
-            if self.connections[client_ip] == 0:
-                del self.connections[client_ip]
+        """No-op for request-based tracking (auto-cleaned by timeout)."""
+        pass  # Requests are auto-cleaned by _cleanup_stale_ips
 
 
 # ============================================================================
@@ -200,10 +228,10 @@ class HTTPFloodDetector:
         self.attack_multiplier = 5  # trigger at 5x baseline
         self.under_attack = False
         self.attack_start = 0
-        # Per-IP thresholds (realistic production values)
-        self.ip_rps_warn = 30
-        self.ip_rps_throttle = 60
-        self.ip_rps_block = 100
+        # Per-IP thresholds (increased for legitimate browser traffic)
+        self.ip_rps_warn = 50      # was 30
+        self.ip_rps_throttle = 100  # was 60
+        self.ip_rps_block = 200     # was 100
         # Stats
         self.stats = {
             "floods_detected": 0,
@@ -292,10 +320,10 @@ class HTTPFloodDetector:
                         self.under_attack = True
                         self.attack_start = time.time()
                         self.stats["attack_events"] += 1
-                        # Lower thresholds during attack
-                        self.ip_rps_warn = 15
-                        self.ip_rps_throttle = 30
-                        self.ip_rps_block = 50
+                        # Lower thresholds during attack (but still reasonable)
+                        self.ip_rps_warn = 30      # was 15
+                        self.ip_rps_throttle = 60   # was 30
+                        self.ip_rps_block = 100     # was 50
                         logger.warning(f"DDoS ATTACK DETECTED: {current_rps:.0f} RPS (baseline: {self.baseline_rps:.0f})")
                 else:
                     if self.under_attack:
@@ -303,9 +331,9 @@ class HTTPFloodDetector:
                         logger.info(f"DDoS attack ended after {duration:.0f}s")
                         self.under_attack = False
                         # Restore normal thresholds
-                        self.ip_rps_warn = 30
-                        self.ip_rps_throttle = 60
-                        self.ip_rps_block = 100
+                        self.ip_rps_warn = 50
+                        self.ip_rps_throttle = 100
+                        self.ip_rps_block = 200
 
 
 # ============================================================================
@@ -429,15 +457,38 @@ class DDoSProtectionEngine:
     """Unified DDoS protection combining all detection methods."""
 
     def __init__(self):
-        self.connection_tracker = ConnectionTracker(max_per_ip=50, max_total=10000)
+        self.connection_tracker = ConnectionTracker(max_per_ip=500, max_total=50000)
         self.slow_detector = SlowAttackDetector()
         self.flood_detector = HTTPFloodDetector()
         self.amplification = AmplificationDetector()
         self.fingerprinter = AttackFingerprinter()
         self.mitigation_mode = "auto"  # auto, always-on, off
-        self.blocked_ips = set()
+        self.blocked_ips = {}  # ip -> block_time (changed from set to dict for timeout)
         self.throttled_ips = {}  # ip -> unblock_time
         self.lock = Lock()
+        # Auto-unblock after 5 minutes (configurable)
+        self.block_duration = 300  # seconds
+        self.last_cleanup = time.time()
+
+    def _cleanup_expired_blocks(self):
+        """Remove expired blocks and throttles."""
+        now = time.time()
+        # Cleanup every 30 seconds
+        if now - self.last_cleanup < 30:
+            return
+        self.last_cleanup = now
+        
+        with self.lock:
+            # Remove expired blocks
+            expired_blocks = [ip for ip, t in self.blocked_ips.items() if now - t > self.block_duration]
+            for ip in expired_blocks:
+                del self.blocked_ips[ip]
+                logger.info(f"DDoS: Auto-unblocked IP {ip} after {self.block_duration}s timeout")
+            
+            # Remove expired throttles
+            expired_throttles = [ip for ip, t in self.throttled_ips.items() if now > t]
+            for ip in expired_throttles:
+                del self.throttled_ips[ip]
 
     def check_request(self, client_ip: str, path: str, method: str,
                       user_agent: str, headers: dict,
@@ -446,14 +497,31 @@ class DDoSProtectionEngine:
         Comprehensive DDoS check for incoming request.
         Returns action: allow, block, throttle, challenge
         """
-        # Check if IP is currently blocked
+        # Cleanup expired blocks periodically
+        self._cleanup_expired_blocks()
+        
+        # Check if IP is currently blocked (with timeout)
         with self.lock:
             if client_ip in self.blocked_ips:
-                return {
-                    "action": "block",
-                    "reason": "ddos_blocked_ip",
-                    "severity": "critical"
-                }
+                # SAFETY: Infrastructure IPs should never be in blocked list,
+                # but double-check as a safety net
+                if _is_infra_ip(client_ip):
+                    self.blocked_ips.pop(client_ip, None)
+                else:
+                    block_time = self.blocked_ips[client_ip]
+                    remaining = self.block_duration - (time.time() - block_time)
+                    if remaining > 0:
+                        return {
+                            "action": "block",
+                            "reason": "ddos_blocked_ip",
+                            "severity": "critical",
+                            "remaining_seconds": int(remaining)
+                        }
+                    else:
+                        # Auto-unblock expired
+                        del self.blocked_ips[client_ip]
+                        logger.info(f"DDoS: Auto-unblocked IP {client_ip}")
+            
             # Check throttle expiry
             if client_ip in self.throttled_ips:
                 if time.time() > self.throttled_ips[client_ip]:
@@ -462,28 +530,32 @@ class DDoSProtectionEngine:
                     return {
                         "action": "throttle",
                         "reason": "ddos_throttled_ip",
-                        "delay_ms": 1000,
-                        "severity": "high"
+                        "delay_ms": 500,  # Reduced from 1000ms
+                        "severity": "medium"  # Reduced from high
                     }
 
-        # 1. Connection flood check
+        # 1. Connection/request flood check (now uses request rate, not connections)
         conn = self.connection_tracker.open_connection(client_ip)
         if not conn["allowed"]:
-            self._escalate(client_ip, "connection_flood")
+            # Throttle instead of block for first offense
+            with self.lock:
+                self.throttled_ips[client_ip] = time.time() + 30  # 30s throttle
             return {
-                "action": "block",
+                "action": "throttle",
                 "reason": conn["reason"],
-                "severity": "critical"
+                "severity": "medium",
+                "delay_ms": 500
             }
 
         # 2. HTTP flood check
         flood = self.flood_detector.check_request(client_ip, path)
         if flood["action"] == "block":
+            # Only block for severe cases (very high RPS)
             self._escalate(client_ip, "http_flood")
             return flood
         elif flood["action"] == "throttle":
             with self.lock:
-                self.throttled_ips[client_ip] = time.time() + 60
+                self.throttled_ips[client_ip] = time.time() + 30  # Reduced from 60s
             return flood
 
         # 3. Fingerprint the request for coordination detection
@@ -502,14 +574,19 @@ class DDoSProtectionEngine:
         return result
 
     def _escalate(self, client_ip: str, attack_type: str):
-        """Escalate an IP to blocked status."""
+        """Escalate an IP to blocked status with timeout.
+        SAFETY: Never blocks infrastructure IPs (K8s nodes, HAProxy).
+        """
+        if _is_infra_ip(client_ip):
+            logger.warning(f"DDoS: REFUSED to block infrastructure IP {client_ip} for {attack_type}")
+            return
         with self.lock:
-            self.blocked_ips.add(client_ip)
-        logger.warning(f"DDoS: Blocked IP {client_ip} for {attack_type}")
+            self.blocked_ips[client_ip] = time.time()  # Store block time
+        logger.warning(f"DDoS: Blocked IP {client_ip} for {attack_type} (auto-unblock after {self.block_duration}s)")
 
     def unblock_ip(self, client_ip: str):
         with self.lock:
-            self.blocked_ips.discard(client_ip)
+            self.blocked_ips.pop(client_ip, None)
             self.throttled_ips.pop(client_ip, None)
 
     def get_stats(self) -> dict:
@@ -523,6 +600,7 @@ class DDoSProtectionEngine:
             "throttled_ips": len(self.throttled_ips),
             "under_attack": self.flood_detector.under_attack,
             "mitigation_mode": self.mitigation_mode,
+            "block_duration": self.block_duration,
         }
 
 

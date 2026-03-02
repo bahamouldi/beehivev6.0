@@ -1,0 +1,129 @@
+# =============================================================================
+# Kustomize — PRODUCTION Environment Overlay for BeeWAF
+# =============================================================================
+# This overlay customizes the base configuration for production environment
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Reference the base configuration
+resources:
+  - ../../base
+
+# Namespace for production environment
+namespace: beewaf
+
+# No name prefix for production
+
+# Common labels for production environment
+commonLabels:
+  environment: production
+  app.kubernetes.io/instance: beewaf-prod
+
+# Common annotations
+commonAnnotations:
+  environment: production
+  description: "BeeWAF Production Environment"
+
+# Image configuration for production
+images:
+  - name: docker.io/library/beewaf
+    newName: docker.io/library/beewaf
+    newTag: latest
+
+# Patches for production environment
+patches:
+  # Deployment patches for production
+  - target:
+      kind: Deployment
+      name: beewaf
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "200m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "2Gi"
+      - op: add
+        path: /spec/template/spec/affinity
+        value:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app: beewaf
+                  topologyKey: kubernetes.io/hostname
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: beewaf
+
+  # Ingress patches for production
+  - target:
+      kind: Ingress
+      name: beewaf-ingress
+    patch: |-
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: beewaf.dpc.com.tn
+      - op: replace
+        path: /spec/rules/0/host
+        value: beewaf.dpc.com.tn
+      - op: add
+        path: /metadata/annotations/cert-manager.io~1cluster-issuer
+        value: letsencrypt-prod
+
+# ConfigMap for production environment
+configMapGenerator:
+  - name: beewaf-config
+    behavior: merge
+    literals:
+      - BEEWAF_LOG_LEVEL=INFO
+      - BEEWAF_RATE_LIMIT_MAX=100
+      - BEEWAF_RATE_LIMIT_WINDOW=60
+
+# HorizontalPodAutoscaler for production
+patchesStrategicMerge:
+  - |-
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: beewaf-hpa
+      namespace: beewaf
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: beewaf
+      minReplicas: 3
+      maxReplicas: 10
+      metrics:
+        - type: Resource
+          resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 70
+        - type: Resource
+          resource:
+            name: memory
+            target:
+              type: Utilization
+              averageUtilization: 80

@@ -4,7 +4,7 @@
 import requests
 import json
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8001"
 
 # Test headers one by one
 headers_to_test = [
@@ -19,6 +19,11 @@ headers_to_test = [
     ("Forwarded", "for=192.168.37.1;proto=https;host=secure.idts.dpc.com.tn"),
     ("X-Forwarded-Port", "443"),
     ("X-Forwarded-Prefix", "/api"),
+    # Known blocking headers for verification
+    ("X-Forwarded-For", "127.0.0.1"),
+    ("X-Forwarded-Host", "localhost"),
+    ("X-Forwarded-Host", "evil.com"),
+    ("X-Original-URL", "/admin"),
 ]
 
 print("Testing headers one by one...")

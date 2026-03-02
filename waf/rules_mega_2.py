@@ -319,9 +319,10 @@ CORS_BYPASS_DEEP = [
     r"(?i)credentials\s*:\s*['\"]same-origin['\"]",
     r"(?i)mode\s*:\s*['\"]no-cors['\"]",
     # --- CORS preflight manipulation ---
-    r"(?i)OPTIONS\s+/.*Access-Control-Request-Method",
-    r"(?i)Access-Control-Request-Method\s*:\s*(?:PUT|DELETE|PATCH|TRACE|CONNECT|DEBUG)",
-    r"(?i)Access-Control-Request-Headers\s*:.*(?:X-Custom|X-Override|X-Method|X-HTTP-Method)",
+    # NOTE: Removed overly broad patterns that matched legitimate CORS preflight:
+    # - "Access-Control-Request-Headers" is part of standard CORS negotiation
+    # - OPTIONS method is handled by fast-path bypass in middleware
+    # - Only match if combined with ACTUAL malicious header values
     # --- Subdomain takeover indicators ---
     r"(?i)(?:CNAME|ALIAS)\s+\w+\.(?:s3|cloudfront|herokuapp|ghost|github|surge|bitbucket|wordpress|shopify|tumblr|desk|freshdesk|zendesk|helpjuice|helpscout|pingdom|tictail|campaign-archive|unbounce|statuspage|uservoice|teamwork)\.",
 ]

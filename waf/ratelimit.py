@@ -4,6 +4,21 @@ import threading
 import os
 from typing import Tuple, Set
 
+# Internal/infrastructure IPs that must NEVER be blocked
+# (K8s node IPs, HAProxy, loopback — blocking these blocks ALL users)
+_INFRA_TRUSTED = {'127.0.0.1', '::1', '207.180.211.157'}
+_INFRA_PREFIXES = (
+    '192.168.', '10.', '172.16.', '172.17.', '172.18.', '172.19.',
+    '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.',
+    '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.',
+)
+
+def _is_infra_ip(ip: str) -> bool:
+    """Check if IP is internal infrastructure — must NEVER be blocked."""
+    if not ip:
+        return True
+    return ip in _INFRA_TRUSTED or ip.startswith(_INFRA_PREFIXES)
+
 class IPBlocklist:
     """Automatic IP blocking for repeated attackers"""
     def __init__(self, block_threshold: int = 10, block_duration: int = 3600):
@@ -14,7 +29,12 @@ class IPBlocklist:
         self._lock = threading.Lock()
     
     def record_attack(self, ip: str):
-        """Record an attack attempt from an IP"""
+        """Record an attack attempt from an IP.
+        SAFETY: Infrastructure IPs (192.168.x, 10.x, K8s nodes) are NEVER blocked.
+        """
+        # CRITICAL GUARD: never block internal infrastructure IPs
+        if _is_infra_ip(ip):
+            return False
         with self._lock:
             now = time.time()
             # Clean expired blocks
@@ -30,7 +50,12 @@ class IPBlocklist:
         return False
     
     def is_blocked(self, ip: str) -> bool:
-        """Check if an IP is blocked"""
+        """Check if an IP is blocked.
+        SAFETY: Infrastructure IPs are NEVER considered blocked.
+        """
+        # CRITICAL GUARD: infra IPs are never blocked
+        if _is_infra_ip(ip):
+            return False
         with self._lock:
             now = time.time()
             self._clean_expired_blocks(now)
@@ -75,7 +100,12 @@ class RateLimiter:
         return time.time()
 
     def allow_request(self, client_id: str) -> Tuple[bool, int]:
-        """Return (allowed, remaining_requests)"""
+        """Return (allowed, remaining_requests).
+        SAFETY: Infrastructure IPs (K8s nodes, proxies) are NEVER rate-limited.
+        """
+        # CRITICAL GUARD: never rate-limit internal infrastructure IPs
+        if _is_infra_ip(client_id):
+            return True, self.max_requests
         now = self._now()
         window_start = now - self.window_seconds
         with self._lock:

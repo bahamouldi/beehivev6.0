@@ -1,0 +1,99 @@
+# =============================================================================
+# ArgoCD — Application BeeWAF (Environnement PRODUCTION)
+# =============================================================================
+# Cette application ArgoCD surveille le repo Git des manifests et déploie
+# les changements en production après validation manuelle (approbation).
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: beewaf-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: beewaf
+    app.kubernetes.io/environment: production
+    app.kubernetes.io/managed-by: argocd
+  # Annotations pour les notifications et webhooks
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: beewaf-deployments
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: beewaf-alerts
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: beewaf-alerts
+    notifications.argoproj.io/subscribe.on-sync-running.slack: beewaf-deployments
+  # Finalizers pour éviter la suppression accidentelle
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Projet ArgoCD
+  project: beewaf-project
+  
+  # Source du code (repo Git des manifests K8s)
+  source:
+    repoURL: https://github.com/votre-org/beewaf-k8s-manifests.git
+    targetRevision: main
+    path: overlays/prod
+    
+    # Utiliser Kustomize pour la gestion des overlays
+    kustomize:
+      namePrefix: ''
+      commonLabels:
+        environment: production
+      images:
+        - docker.io/beewaf:latest
+  
+  # Destination du déploiement
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: beewaf
+  
+  # Stratégie de synchronisation (MANUEL pour la production)
+  syncPolicy:
+    # PAS de synchronisation automatique en production
+    # automated:
+    #   prune: true
+    #   selfHeal: true
+    
+    # Options de synchronisation
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+      - ServerSideApply=true
+    
+    # Retry en cas d'échec
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+  
+  # Ignorer les différences sur certains champs
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+        - /spec/template/metadata/annotations/checksum
+        - /spec/template/spec/containers/0/image
+  
+  # Hooks de synchronisation (pour les actions avant/après sync)
+  hooks:
+    # Vérification de santé avant sync
+    - name: pre-sync-health-check
+      type: PreSync
+      hook:
+        exec:
+          command: ["/bin/sh", "-c", "curl -f http://beewaf-svc:80/health || exit 1"]
+  
+  # Informations pour l'UI ArgoCD
+  info:
+    - name: 'Environment'
+      value: 'Production'
+    - name: 'Team'
+      value: 'BeeWAF Team'
+    - name: 'Contact'
+      value: 'beewaf-team@example.com'
+    - name: 'SLA'
+      value: '99.9%'

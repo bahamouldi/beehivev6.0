@@ -1,0 +1,40 @@
+# =============================================================================
+# BeeWAF — Protège le frontend Angular dev.idts.dpc.com.tn
+#
+# AVANT (sans WAF) :
+#   Internet → HAProxy → Nginx Ingress → idts-front-service (pas protégé)
+#
+# APRÈS (avec WAF) :
+#   Internet → HAProxy → Nginx Ingress → BeeWAF → idts-front-service
+#
+# IMPORTANT : supprimer l'ancien ingress avant d'appliquer celui-ci :
+#   kubectl delete ingress idts-ingress -n idts-test
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: beewaf-protects-dev-idts
+  namespace: beewaf
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+    nginx.ingress.kubernetes.io/forwarded-for-header: "X-Forwarded-For"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - dev.idts.dpc.com.tn
+    secretName: beewaf-dev-idts-tls
+  rules:
+  - host: dev.idts.dpc.com.tn
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: beewaf-svc
+            port:
+              number: 80

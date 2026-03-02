@@ -403,7 +403,7 @@ FILE_ATTACKS = [
     r"(?i)\.(?:asp|aspx|ashx|asmx|ascx|axd|cshtml|vbhtml)(?:\?|\s|$|%00|\x00)",
     r"(?i)\.(?:jsp|jspx|jsw|jsv|jspf|wss|do|action)(?:\?|\s|$|%00|\x00)",
     r"(?i)\.(?:cgi|pl|py|rb|sh|bash|zsh|ksh|csh|tcsh)(?:\?|\s|$|%00|\x00)",
-    r"(?i)\.(?:exe|msi|bat|cmd|com|scr|pif|vbs|vbe|js|jse|wsf|wsh|ps1|psm1|psd1)(?:\?|\s|$|%00|\x00)",
+    r"(?i)\.(?:exe|msi|bat|cmd|com|scr|pif|vbs|vbe|jse|wsf|wsh|ps1|psm1|psd1)(?:\?|\s|$|%00|\x00)",
     r"(?i)\.(?:dll|sys|drv|ocx|cpl|inf|reg)(?:\?|\s|$|%00|\x00)",
     r"(?i)\.(?:war|ear|jar|class|aar)(?:\?|\s|$|%00|\x00)",
     r"(?i)\.(?:swf|swc|fla|flv|as|mxml)(?:\?|\s|$|%00|\x00)",
@@ -830,7 +830,7 @@ MOBILE_IOT = [
     r"(?i)/\+/#\b",
     r"(?i)topic=.*(?:cmd|exec|system|shell|admin|config|password|secret|token|key)\b",
     # Smart home / IoT endpoints
-    r"(?i)/api/(?:device|sensor|actuator|gateway|hub|bridge|controller|firmware|update|ota|diagnostic|telemetry|command|status|health|config|register|provision|discover|pair|unpair|reset|reboot|factory-reset)\b",
+    r"(?i)/api/(?:device|sensor|actuator|gateway|hub|bridge|controller|firmware|update|ota|diagnostic|telemetry|command|status|health|config|provision|discover|pair|unpair|reset|reboot|factory-reset)\b",
     r"(?i)X-Device-Token\b",
     r"(?i)X-Device-Key\b",
     r"(?i)X-Device-Secret\b",

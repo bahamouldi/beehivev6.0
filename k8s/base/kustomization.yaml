@@ -1,0 +1,53 @@
+# =============================================================================
+# Kustomize — Base Configuration for BeeWAF
+# =============================================================================
+# This is the base configuration that will be customized by overlays
+# for different environments (dev, staging, prod)
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespace for all resources
+namespace: beewaf
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/name: beewaf
+  app.kubernetes.io/component: waf
+  app.kubernetes.io/part-of: beewaf-waf
+  app.kubernetes.io/managed-by: kustomize
+
+# Common annotations
+commonAnnotations:
+  app.kubernetes.io/version: "6.0"
+
+# Resources to include
+resources:
+  - namespace.yaml
+  - secrets.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+# ConfigMap generator (if needed)
+# configMapGenerator:
+#   - name: beewaf-config
+#     literals:
+#       - BEEWAF_LOG_LEVEL=INFO
+
+# Image tags (will be overridden by overlays)
+images:
+  - name: docker.io/library/beewaf
+    newName: docker.io/library/beewaf
+    newTag: latest
+
+# Patches (common patches)
+patches:
+  # Remove nodeName for portability (overlays can add it back)
+  - target:
+      kind: Deployment
+      name: beewaf
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeName

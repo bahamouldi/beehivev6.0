@@ -157,8 +157,10 @@ app = FastAPI()
 
 # Rate limiter: 100 requests per minute per IP (realistic production value)
 rate_limiter = RateLimiter(max_requests=100, window_seconds=60)
-# IP blocklist: auto-block after 10 detected attacks, ban for 1 hour
-ip_blocklist = IPBlocklist(block_threshold=10, block_duration=3600)
+# IP blocklist: auto-block after 50 detected attacks, ban for 10 minutes
+# Increased threshold from 10 to 50 to prevent false positives from shared IPs (proxy/NAT)
+# Reduced duration from 3600s (1h) to 600s (10min) for faster recovery
+ip_blocklist = IPBlocklist(block_threshold=50, block_duration=600)
 MODEL_PATH = os.environ.get('BEEWAF_MODEL_PATH','models/model.pkl')
 ML_ENGINE_PATH = os.environ.get('BEEWAF_ML_ENGINE_PATH', 'models/ml_engine.pkl')
 TRAIN_DATA = os.environ.get('BEEWAF_TRAIN_DATA','data/train_demo.csv')
@@ -206,19 +208,71 @@ async def waf_middleware(request: Request, call_next):
     start_time = time.time()
     ACTIVE_REQUESTS.inc()
     
-    # Get real client IP (check X-Original-IP, X-Real-IP or X-Forwarded-For header first for proxy/load balancer)
-    x_original_ip = request.headers.get('X-Original-IP')
-    x_real_ip = request.headers.get('X-Real-IP')
-    x_forwarded_for = request.headers.get('X-Forwarded-For')
-    if x_original_ip:
-        client = x_original_ip
-    elif x_real_ip:
+    # ========== SECURE CLIENT IP EXTRACTION (K8s + HAProxy) ==========
+    # Architecture: Client → HAProxy (207.180.211.157) → Nginx Ingress (192.168.x.x) → BeeWAF Pod
+    #
+    # Nginx Ingress sets:
+    #   X-Forwarded-For: <real-client-ip>, 207.180.211.157   (appends each hop)
+    #   X-Real-IP: <real-client-ip>                          (original client)
+    #
+    # CRITICAL: We MUST extract the real public client IP, NOT the K8s node IP.
+    # If we block 192.168.1.0 (K8s node), ALL users going through that node are blocked!
+    #
+    # Strategy:
+    #   1. Parse X-Forwarded-For LEFT to RIGHT — first non-infrastructure IP = real client
+    #   2. Fallback to X-Real-IP if it's public
+    #   3. Last resort: request.client.host (will be K8s node IP — mark as internal)
+
+    _TRUSTED_PROXIES = {
+        '127.0.0.1', '::1',
+        '207.180.211.157',  # HAProxy public IP
+    }
+    _TRUSTED_PREFIXES = (
+        '192.168.', '10.', '172.16.', '172.17.', '172.18.', '172.19.',
+        '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.',
+        '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.',
+    )
+
+    def _is_infra_ip(ip: str) -> bool:
+        """Check if IP belongs to internal infrastructure (proxies, K8s nodes)."""
+        if not ip:
+            return True
+        return ip in _TRUSTED_PROXIES or ip.startswith(_TRUSTED_PREFIXES)
+
+    # Step 1: Parse X-Forwarded-For — find the FIRST public (non-infra) IP
+    # In our chain: XFF = "real-client, 207.180.211.157" or "real-client"
+    # The leftmost public IP is the real client (Nginx Ingress is trusted to set this)
+    x_forwarded_for = request.headers.get('X-Forwarded-For', '').strip()
+    x_real_ip = request.headers.get('X-Real-IP', '').strip()
+
+    client = None
+
+    if x_forwarded_for:
+        xff_parts = [ip.strip() for ip in x_forwarded_for.split(',') if ip.strip()]
+        # Find first non-infrastructure IP (= real client)
+        for ip in xff_parts:
+            if not _is_infra_ip(ip):
+                client = ip
+                break
+
+    # Step 2: Fallback to X-Real-IP if XFF didn't yield a public IP
+    if not client and x_real_ip and not _is_infra_ip(x_real_ip):
         client = x_real_ip
-    elif x_forwarded_for:
-        client = x_forwarded_for.split(',')[0].strip()
-    else:
+
+    # Step 3: Last resort — use direct connection IP (K8s node IP)
+    # IMPORTANT: This is an internal IP — we should NEVER auto-block it
+    if not client:
         client = request.client.host if request.client else 'unknown'
-    
+        # Log raw headers for debugging — helps identify proxy misconfiguration
+        if _is_infra_ip(client):
+            log.debug('IP extraction fell back to infra IP', extra={
+                'event': 'ip-debug',
+                'resolved_ip': client,
+                'xff_raw': x_forwarded_for or '(empty)',
+                'x_real_ip_raw': x_real_ip or '(empty)',
+                'remote_addr': request.client.host if request.client else 'unknown',
+            })
+    # ========== END SECURE CLIENT IP EXTRACTION ==========
     # Check IP blocklist first (auto-blocked attackers)
     if ip_blocklist.is_blocked(client):
         log.warning('Blocked IP attempt', extra={
@@ -332,17 +386,25 @@ async def waf_middleware(request: Request, call_next):
     # ========== v6.0: BUSINESS LOGIC & HEADER SPOOFING PROTECTION ==========
     import re as _re
     
-    # 1. X-Forwarded-For spoofing with loopback addresses
+        # 1. X-Forwarded-For spoofing detection
+    # Block if client-supplied XFF contains loopback/reserved IPs attempting to impersonate internal
     xff = request.headers.get('x-forwarded-for', '')
-    if xff and _re.search(r'(?:^|,\s*)(?:127\.0\.0\.1|::1|0\.0\.0\.0|localhost|10\.0\.0\.1)(?:$|,)', xff, _re.IGNORECASE):
-        log.warning('Request blocked - XFF spoofing', extra={
-            'event': 'blocked', 'client_ip': client, 'method': method,
-            'path': path, 'reason': 'xff-spoof', 'status_code': 403
-        })
-        BLOCKED_TOTAL.labels(reason='xff-spoof').inc()
-        ACTIVE_REQUESTS.dec()
-        return JSONResponse(status_code=403, content={"blocked": True, "reason": "xff-spoof"})
-    
+    if xff:
+        xff_parts = [ip.strip() for ip in xff.split(',')]
+        # Only check client-supplied parts (everything except the last entry added by Ingress)
+        # The last 1-2 entries are added by our infrastructure
+        client_supplied_xff = xff_parts[:-2] if len(xff_parts) > 2 else []
+        for xff_ip in client_supplied_xff:
+            if _re.match(r'^(?:127\.0\.0\.\d+|::1|0\.0\.0\.0|localhost)$', xff_ip, _re.IGNORECASE):
+                log.warning('Request blocked - XFF spoofing with loopback', extra={
+                    'event': 'blocked', 'client_ip': client, 'method': method,
+                    'path': path, 'reason': 'xff-loopback-spoof',
+                    'spoofed_xff': xff[:200],
+                    'status_code': 403
+                })
+                BLOCKED_TOTAL.labels(reason='xff-spoof').inc()
+                ACTIVE_REQUESTS.dec()
+                return JSONResponse(status_code=403, content={"blocked": True, "reason": "xff-spoof"})
     # 2. Negative ID in API paths (business logic abuse)
     if _re.search(r'/api/\w+/-\d+', path):
         log.warning('Request blocked - negative ID', extra={
@@ -454,7 +516,8 @@ async def waf_middleware(request: Request, call_next):
     # ========== v5.0: DDoS PROTECTION ==========
     try:
         ddos_engine = ddos_protection.get_engine()
-        ddos_result = ddos_engine.check_request(client, path, method, 0, 0)
+        _ua = request.headers.get('user-agent', '')
+        ddos_result = ddos_engine.check_request(client, path, method, _ua, dict(request.headers))
         if ddos_result.get('action') == 'block':
             reason_str = ddos_result.get('reason', 'ddos-detected')
             log.warning('Request blocked - DDoS protection', extra={
@@ -512,7 +575,12 @@ async def waf_middleware(request: Request, call_next):
             return JSONResponse(status_code=403, content={"blocked": True, "reason": "business-logic"})
     # ========== END BUSINESS LOGIC BODY CHECKS ==========
 
-    allowed, remaining = rate_limiter.allow_request(client)
+    # SAFETY NET: Never rate-limit infrastructure IPs (K8s nodes, proxies)
+    # Even if IP extraction fails, infra IPs must never be throttled
+    if _is_infra_ip(client):
+        allowed, remaining = True, 999
+    else:
+        allowed, remaining = rate_limiter.allow_request(client)
     if not allowed:
         log.warning('Request blocked', extra={
             'event': 'blocked',
@@ -681,7 +749,7 @@ async def waf_middleware(request: Request, call_next):
     except Exception:
         log.debug('Session protection error', exc_info=True)
     
-    # --- 6. API Security ---
+        # --- 6. API Security ---
     try:
         api_result = api_security.check_request(
             path, method, headers_dict, body_text, client, query_string
@@ -689,16 +757,45 @@ async def waf_middleware(request: Request, call_next):
         if api_result.get('action') == 'block':
             issues = api_result.get('issues', [])
             reason_str = issues[0]['type'] if issues else 'api-security'
-            log.warning('Request blocked - API security', extra={
-                'event': 'blocked', 'client_ip': client, 'method': method,
-                'path': path, 'reason': reason_str,
-                'issues': [i['message'] for i in issues[:3]],
-                'status_code': 403
-            })
-            BLOCKED_TOTAL.labels(reason='api-security').inc()
-            ACTIVE_REQUESTS.dec()
-            ip_blocklist.record_attack(client)
-            return JSONResponse(status_code=403, content={"blocked": True, "reason": reason_str})
+
+            # Vérifier si c'est un VRAI problème de sécurité ou juste un rate limit
+            issue_types = [i.get('type', '') for i in issues]
+            is_rate_limit_only = all(
+                t in ('api-rate-limit', 'api-no-version', 'rest-method-violation')
+                for t in issue_types
+            )
+
+            if is_rate_limit_only:
+                # Rate limit → 429 + warning, PAS de record_attack
+                log.warning('Request throttled - API rate limit', extra={
+                    'event': 'throttled', 'client_ip': client, 'method': method,
+                    'path': path, 'reason': reason_str,
+                    'issues': [i['message'] for i in issues[:3]],
+                    'status_code': 429
+                })
+                BLOCKED_TOTAL.labels(reason='api-rate-limit').inc()
+                ACTIVE_REQUESTS.dec()
+                # PAS de ip_blocklist.record_attack() ici !
+                return JSONResponse(status_code=429, content={
+                    "blocked": True,
+                    "reason": reason_str,
+                    "retry_after": 60
+                })
+            else:
+                # Vrai problème de sécurité → 403 + record_attack
+                log.warning('Request blocked - API security', extra={
+                    'event': 'blocked', 'client_ip': client, 'method': method,
+                    'path': path, 'reason': reason_str,
+                    'issues': [i['message'] for i in issues[:3]],
+                    'status_code': 403
+                })
+                BLOCKED_TOTAL.labels(reason='api-security').inc()
+                ACTIVE_REQUESTS.dec()
+                ip_blocklist.record_attack(client)
+                return JSONResponse(status_code=403, content={
+                    "blocked": True,
+                    "reason": reason_str
+                })
     except Exception:
         log.debug('API security error', exc_info=True)
     
@@ -1128,7 +1225,7 @@ async def waf_middleware(request: Request, call_next):
                 resp_content_type = cloaked_headers.get('content-type', '')
                 if any(t in resp_content_type for t in ['json', 'html', 'text', 'xml']):
                     resp_text_final = resp_body_final.decode('utf-8', errors='ignore')
-                    resp_text_final = response_cloaking.cloak_body(resp_text_final)
+                    resp_text_final, _body_findings = response_cloaking.cloak_body(resp_text_final, resp_content_type)
                     resp_body_final = resp_text_final.encode('utf-8')
                 
                 cloaked_headers['content-length'] = str(len(resp_body_final))
@@ -1172,6 +1269,31 @@ async def waf_middleware(request: Request, call_next):
     REQUEST_LATENCY.labels(method=method, endpoint=path).observe(latency)
     ACTIVE_REQUESTS.dec()
     return response
+
+# ========== SECURITY HEADERS MIDDLEWARE (wraps ALL responses including 403 blocks) ==========
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """
+    Ensures security headers are present on ALL responses (200, 403, 429, etc.)
+    This middleware wraps the WAF middleware, so it catches every response
+    including early returns from blocked requests.
+    """
+    response = await call_next(request)
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'geolocation=(), camera=(), microphone=()'
+    response.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
+    response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
+    response.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
+    # Remove server fingerprinting headers if present
+    if 'server' in response.headers:
+        del response.headers['server']
+    if 'x-powered-by' in response.headers:
+        del response.headers['x-powered-by']
+    return response
+# ========== END SECURITY HEADERS MIDDLEWARE ==========
 
 @app.get('/health')
 def health():
@@ -1420,9 +1542,15 @@ if BACKEND_URL:
             headers = {k: v for k, v in request.headers.items()
                        if k.lower() not in hop_by_hop}
 
-            # Add X-Forwarded headers
-            client_ip = request.headers.get('x-real-ip', request.client.host if request.client else '0.0.0.0')
-            headers['X-Forwarded-For'] = client_ip
+            # Add X-Forwarded headers (use the validated client IP from middleware)
+            # 'client' variable was already securely extracted in waf_middleware
+            # but reverse_proxy runs after middleware, so re-extract safely
+            _real_ip = request.headers.get('X-Real-IP', '').strip()
+            if _real_ip and not _real_ip.startswith(('192.168.', '10.', '172.')):
+                _fwd_ip = _real_ip
+            else:
+                _fwd_ip = request.client.host if request.client else '0.0.0.0'
+            headers['X-Forwarded-For'] = _fwd_ip
             headers['X-Forwarded-Proto'] = request.headers.get('x-forwarded-proto', 'http')
             headers['X-Forwarded-Host'] = request.headers.get('host', '')
             headers['X-BeeWAF-Inspected'] = 'true'

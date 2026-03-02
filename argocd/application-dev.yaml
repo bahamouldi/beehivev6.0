@@ -1,0 +1,83 @@
+# =============================================================================
+# ArgoCD — Application BeeWAF (Environnement DEV)
+# =============================================================================
+# Cette application ArgoCD surveille le repo Git des manifests et déploie
+# automatiquement les changements dans l'environnement de développement.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: beewaf-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: beewaf
+    app.kubernetes.io/environment: dev
+    app.kubernetes.io/managed-by: argocd
+  # Annotations pour les notifications et webhooks
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: beewaf-deployments
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: beewaf-alerts
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: beewaf-alerts
+spec:
+  # Projet ArgoCD
+  project: beewaf-project
+  
+  # Source du code (repo Git des manifests K8s)
+  source:
+    repoURL: https://github.com/votre-org/beewaf-k8s-manifests.git
+    targetRevision: develop
+    path: overlays/dev
+    
+    # Utiliser Kustomize pour la gestion des overlays
+    kustomize:
+      namePrefix: dev-
+      commonLabels:
+        environment: development
+      images:
+        - docker.io/beewaf:latest
+  
+  # Destination du déploiement
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: beewaf-dev
+  
+  # Stratégie de synchronisation
+  syncPolicy:
+    # Synchronisation automatique
+    automated:
+      prune: true        # Supprimer les ressources obsolètes
+      selfHeal: true     # Corriger automatiquement les dérives
+      allowEmpty: false  # Ne pas permettre de sync vide
+    
+    # Options de synchronisation
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+    
+    # Retry en cas d'échec
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  
+  # Ignorer les différences sur certains champs
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+        - /spec/template/metadata/annotations/checksum
+  
+  # Informations pour l'UI ArgoCD
+  info:
+    - name: 'Environment'
+      value: 'Development'
+    - name: 'Team'
+      value: 'BeeWAF Team'
+    - name: 'Contact'
+      value: 'beewaf-team@example.com'

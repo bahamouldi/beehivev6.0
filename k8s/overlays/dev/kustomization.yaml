@@ -1,0 +1,91 @@
+# =============================================================================
+# Kustomize — DEV Environment Overlay for BeeWAF
+# =============================================================================
+# This overlay customizes the base configuration for development environment
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Reference the base configuration
+resources:
+  - ../../base
+
+# Namespace for dev environment
+namespace: beewaf-dev
+
+# Name prefix for all resources
+namePrefix: dev-
+
+# Common labels for dev environment
+commonLabels:
+  environment: development
+  app.kubernetes.io/instance: beewaf-dev
+
+# Common annotations
+commonAnnotations:
+  environment: development
+  description: "BeeWAF Development Environment"
+
+# Image configuration for dev
+images:
+  - name: docker.io/library/beewaf
+    newName: docker.io/library/beewaf
+    newTag: develop
+
+# Patches for dev environment
+patches:
+  # Deployment patches for dev
+  - target:
+      kind: Deployment
+      name: beewaf
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "100m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "256Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "debug"
+
+  # Ingress patches for dev
+  - target:
+      kind: Ingress
+      name: beewaf-ingress
+    patch: |-
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: beewaf-dev.dpc.com.tn
+      - op: replace
+        path: /spec/rules/0/host
+        value: beewaf-dev.dpc.com.tn
+
+# ConfigMap for dev environment
+configMapGenerator:
+  - name: beewaf-config
+    behavior: merge
+    literals:
+      - BEEWAF_LOG_LEVEL=DEBUG
+      - BEEWAF_RATE_LIMIT_MAX=1000
+      - BEEWAF_RATE_LIMIT_WINDOW=60
+
+# Replace secrets with dev values
+replacements:
+  - source:
+      kind: ConfigMap
+      name: beewaf-config
+    targets:
+      - select:
+          kind: Deployment
+          name: beewaf

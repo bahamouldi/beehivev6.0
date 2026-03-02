@@ -143,7 +143,7 @@ RACE_BUSINESS_DEEP = [
     r"(?i)(?:time[_-]?of[_-]?check|TOCTOU|time[_-]?of[_-]?use|race[_-]?condition|concurrent[_-]?access|double[_-]?spending|replay[_-]?attack)\b",
     r"(?i)(?:Transfer-Encoding|Content-Length)\s*:\s*0\r?\n(?:Transfer-Encoding|Content-Length)\s*:",
     r"(?i)If-(?:Match|None-Match|Modified-Since|Unmodified-Since|Range)\s*:\s*(?:\*|W/\"|\"|0)",
-    r"(?i)(?:X-Request-ID|X-Correlation-ID|X-Trace-ID|Idempotency-Key)\s*:\s*(?:[a-f0-9-]{36}|[a-zA-Z0-9]{8,})",
+    # NOTE: X-Request-ID/X-Correlation-ID/X-Trace-ID/Idempotency-Key removed — standard infrastructure headers from HAProxy/nginx
     # --- Business logic ---
     r"(?i)(?:price|amount|quantity|total|subtotal|discount|coupon|promo|credit|balance|points|reward|bonus|gift|voucher|refund)\s*=\s*(?:-[0-9]|0\.0{1,}1|999{3,}|0(?:\.0+)?|NaN|Infinity|-Infinity|null|undefined|true|false)",
     r"(?i)(?:price|amount|quantity|total|subtotal|discount|coupon|promo|credit|balance)\s*=\s*(?:-?\d{6,}|0x[0-9a-f]+|[0-9]+e[0-9]+)",
@@ -157,8 +157,8 @@ RACE_BUSINESS_DEEP = [
     # --- IDOR ---
     r"(?i)/(?:users?|accounts?|profiles?|orders?|invoices?|transactions?|payments?|documents?|files?|messages?|notifications?|tickets?|reports?|settings?|preferences?)/(?:\d+|[a-f0-9-]{36}|[a-zA-Z0-9]{8,})(?:/(?:edit|update|delete|remove|archive|export|download|share|transfer|activate|deactivate|verify|approve|reject|suspend|ban|block|unblock))\b",
     r"(?i)(?:user_id|userId|account_id|accountId|order_id|orderId|file_id|fileId|doc_id|docId|msg_id|msgId|transaction_id|transactionId|invoice_id|invoiceId)\s*=\s*(?:\d{1,10}|[a-f0-9-]{36}|[a-zA-Z0-9]{8,})",
-    # --- Mass assignment ---
-    r"(?i)(?:role|admin|is_admin|isAdmin|is_staff|isStaff|is_superuser|isSuperuser|verified|is_verified|isVerified|activated|is_activated|isActivated|banned|is_banned|isBanned|deleted|is_deleted|isDeleted|active|is_active|isActive|permission|permissions|privilege|privileges|access_level|accessLevel|user_type|userType|account_type|accountType|plan|subscription|tier|credits|balance|points|trust_level|trustLevel)\b",
+    # --- Mass assignment (require parameter assignment context, not bare keywords) ---
+    r"(?i)(?:is_admin|isAdmin|is_staff|isStaff|is_superuser|isSuperuser|is_verified|isVerified|is_activated|isActivated|is_banned|isBanned|is_deleted|isDeleted|access_level|accessLevel|user_type|userType|account_type|accountType|trust_level|trustLevel)\s*(?:=|:)\s*(?:true|false|1|0|admin|root|superuser|staff|yes|no)\b",
     r"(?i)\{[^}]*(?:\"role\"|\"admin\"|\"isAdmin\"|\"is_admin\"|\"permissions?\"|\"privilege\"|\"access_level\"|\"user_type\"|\"account_type\"|\"plan\"|\"subscription\"|\"credits\"|\"balance\")\s*:\s*(?:\"admin\"|\"root\"|\"superuser\"|true|1|\d{4,})[^}]*\}",
 ]
 
@@ -411,10 +411,10 @@ EMERGING_MISC_DEEP = [
     # --- API abuse ---
     r"(?i)(?:X-RateLimit-(?:Limit|Remaining|Reset|Retry-After)|Retry-After|X-Throttle-(?:Limit|Remaining|Reset))\s*:\s*(?:0|-1|999{3,}|2147483647)",
     r"(?i)(?:graphql|gql)\s*\{?\s*(?:query|mutation|subscription)\s*\{?\s*(?:__(?:schema|type|typename))\b",
-    r"(?i)/(?:api|rest|graphql|swagger|openapi|api-docs|redoc|apidoc)(?:/v[0-9]+)?/(?:docs|spec|schema|swagger-ui|redoc|graphiql|playground|explorer|console|debug|test)\b",
+    r"(?i)/(?:api|rest|graphql|swagger|openapi|api-docs|redoc|apidoc)(?:/v[0-9]+)?/(?:docs|spec|schema|swagger-ui|redoc|graphiql|playground|explorer|console|debug)\b",
     r"(?i)/(?:\.env|\.git/config|\.svn/entries|\.hg/dirstate|\.DS_Store|Thumbs\.db|web\.config|crossdomain\.xml|clientaccesspolicy\.xml|\.well-known/)\b",
     r"(?i)/(?:wp-config\.php|configuration\.php|config\.php|settings\.php|database\.yml|secrets\.yml|credentials\.yml|master\.key|production\.rb|development\.rb|\.env\.local|\.env\.production|\.env\.development|\.env\.staging|\.env\.test)\b",
-    r"(?i)/(?:debug|test|demo|dev|staging|backup|bak|old|temp|tmp|copy|archive|dump|export|import|install|setup|config|admin|manage|monitor|internal|private|secret|hidden)/\b",
+    r"(?i)/(?:debug|demo|staging|backup|bak|old|temp|tmp|copy|archive|dump|export|import|install|setup|config|manage|monitor|internal|private|secret|hidden)/\b",
     # --- Zero-day patterns (generic) ---
     r"(?i)(?:spring4shell|log4shell|text4shell|shellshock|heartbleed|poodle|beast|crime|breach|lucky13|sweet32|ticketbleed|zombie_poodle|goldendoodle|raccoon|zerologon|sigred|printnightmare|follina|msdt|proxyshell|proxylogon|proxynotshell|hafnium|solarwinds|exchange|eternal_blue|wannacry|notpetya|petya|spectre|meltdown|rowhammer|retbleed|zenbleed|inception|downfall|cachewarp|reptar|ghostrace)\b",
     r"(?i)(?:ms17-010|cve-2017-0144|cve-2020-1472|cve-2021-44228|cve-2021-45046|cve-2021-45105|cve-2021-44832|cve-2022-22965|cve-2022-26134|cve-2022-42889|cve-2023-44487|cve-2024-3094|cve-2024-6387)\b",

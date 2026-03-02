@@ -630,7 +630,31 @@ class SessionProtectionEngine:
         if origin and host:
             # Compare origin to host
             origin_host = origin.replace('http://', '').replace('https://', '').split('/')[0]
-            if origin_host != host and origin_host.split(':')[0] != host.split(':')[0]:
+            
+            # In reverse proxy setups, Origin (frontend) != Host (backend) is NORMAL.
+            # Check X-Forwarded-Host which preserves the original Host from the client.
+            x_fwd_host = headers.get('x-forwarded-host', headers.get('X-Forwarded-Host', ''))
+            
+            # Also support a configurable trusted origins list via env var
+            import os
+            trusted_raw = os.environ.get('BEEWAF_TRUSTED_ORIGINS', '')
+            trusted_origins = set(t.strip().lower() for t in trusted_raw.split(',') if t.strip())
+            
+            origin_base = origin_host.split(':')[0].lower()
+            host_base = host.split(':')[0].lower()
+            fwd_host_base = x_fwd_host.split(':')[0].lower() if x_fwd_host else ''
+            
+            # Allow if origin matches host, x-forwarded-host, or is in trusted origins,
+            # or if both share the same parent domain (e.g. dev.idts.dpc.com.tn / idts.back.dpc.com.tn)
+            origin_parts = origin_base.rsplit('.', 3)
+            host_parts = host_base.rsplit('.', 3)
+            same_parent = (len(origin_parts) >= 3 and len(host_parts) >= 3 
+                          and origin_parts[-2:] == host_parts[-2:])
+            
+            if (origin_base != host_base 
+                and origin_base != fwd_host_base
+                and origin_base not in trusted_origins
+                and not same_parent):
                 issues.append({
                     'type': 'csrf-origin-mismatch',
                     'severity': 'high',

@@ -1238,9 +1238,9 @@ PROTOCOL_ATTACKS = [
     r"(?i)(?:TRACE|TRACK|DEBUG|PROPFIND|PROPPATCH|MKCOL|COPY|MOVE|LOCK|UNLOCK|SEARCH)\s+/",
     r"(?i)X-HTTP-Method-Override:\s*(?:PUT|DELETE|PATCH|OPTIONS|TRACE|CONNECT)",
     r"(?i)X-Method-Override:\s*(?:PUT|DELETE|PATCH|TRACE)",
-    # CORS attacks
+    # CORS attacks - removed overly broad Access-Control-Request-Headers pattern
+    # Standard CORS preflight now handled by middleware OPTIONS fast-path
     r"(?i)Origin:\s*(?:null|https?://(?:evil|attacker|malicious|exploit)\.\w+)",
-    r"(?i)Access-Control-Request-Headers:.*(?:X-Custom|Authorization)",
     # Content-Type attacks
     r"(?i)Content-Type:\s*(?:text/xml|application/xml|multipart/form-data).*(?:boundary=.*boundary|charset=.*charset)",
     r"(?i)Content-Type:\s*(?:application/x-www-form-urlencoded).*(?:charset=(?:utf-7|ibm|cp))",

@@ -198,7 +198,7 @@ RACE_TIMING = [
 IDOR_ACCESS = [
     # Numeric ID manipulation
     r"(?i)/(?:user|users|account|accounts|profile|profiles|customer|customers|member|members|employee|employees|admin|admins|manager|managers|staff)/(?:0|(?:-\d+))\b",
-    r"(?i)/(?:order|orders|invoice|invoices|receipt|receipts|ticket|tickets|report|reports|document|documents|file|files|record|records|entry|entries)/\d+\b",
+    r"(?i)(?<!/api)/(?:order|orders|invoice|invoices|receipt|receipts|ticket|tickets|report|reports|document|documents|file|files|record|records|entry|entries)/\d+\b",
     r"(?i)/(?:message|messages|chat|chats|conversation|conversations|thread|threads|comment|comments|review|reviews|feedback)/\d+\b",
     r"(?i)/(?:payment|payments|transaction|transactions|transfer|transfers|subscription|subscriptions|plan|plans)/\d+\b",
     r"(?i)/(?:project|projects|team|teams|organization|organizations|workspace|workspaces|group|groups|channel|channels)/\d+\b",

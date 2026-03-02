@@ -610,7 +610,7 @@ JOOMLA_ATTACKS = [
     r"(?i)/index\.php\?option=com_\w+(?:&|\?).*(?:task=|view=|layout=)",
     r"(?i)/index\.php\?option=com_(?:content|users|media|installer|config|plugins|modules|templates|languages|search|finder|tags|fields|categories|menus|messages|redirect|newsfeeds|contact|banners|wrapper|weblinks).*(?:\.\.\/|%2e%2e|<script|union\s+select)",
     r"(?i)/administrator/index\.php\?option=com_\w+",
-    r"(?i)/api/(?:index\.php/)?v1/",
+    r"(?i)/api/index\.php/v1/",
     r"(?i)/(?:libraries|cli|layouts|includes)/",
     r"(?i)(?:com_fabrik|com_fields|com_jce|com_akeeba|com_virtuemart|com_k2|com_phocagallery).*(?:\.\.\/|exec|eval|system|upload)",
     # Joomla CVEs

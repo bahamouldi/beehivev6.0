@@ -1,0 +1,11 @@
+# =============================================================================
+# ArgoCD — Namespace pour BeeWAF
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: beewaf
+  labels:
+    app.kubernetes.io/name: beewaf
+    app.kubernetes.io/part-of: beewaf-waf
+    app.kubernetes.io/managed-by: argocd
