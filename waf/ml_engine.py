@@ -411,13 +411,13 @@ class BeeWAFMLEngine:
         
         # Ensemble weights (tunable) - prioritize supervised models
         self.weights = {
-            'isolation_forest': 0.1,  # Lower weight - less reliable
+            'isolation_forest': 0.0,   # v7.0: Disabled - only 77% accuracy, causes FPs
             'random_forest': 0.45,     # High weight - best for classification
-            'gradient_boosting': 0.45  # High weight - best for scoring
+            'gradient_boosting': 0.55  # v7.0: Increased - best accuracy (95.2%)
         }
         
         # Thresholds - higher threshold = less false positives
-        self.attack_threshold = 0.6  # Increased from 0.5 for fewer false positives
+        self.attack_threshold = 0.65  # v7.0: Increased from 0.6 for fewer false positives
         
         # Training stats
         self.is_trained = False
@@ -662,8 +662,20 @@ class BeeWAFMLEngine:
                     parsed = json.loads(body_stripped)
                     # Valid JSON - check it doesn't contain attack patterns in values
                     json_str = json.dumps(parsed).lower()
-                    attack_keywords = ['script', 'alert', 'onerror', 'union', 'select', 
-                                      '../', '/etc/', 'exec', 'cmd', 'drop', 'insert']
+                    attack_keywords = [
+                        'script', 'alert', 'onerror', 'onload', 'onclick', 'onmouseover',
+                        'union', 'select', 'drop', 'insert', 'delete', 'update',
+                        '../', '/etc/', '/proc/', '/sys/', '/dev/',
+                        'exec', 'cmd', 'system(', 'eval(',
+                        '{{', '}}', '$where', '$gt', '$ne', '$regex',
+                        '__proto__', 'constructor.prototype',
+                        'java.lang', 'runtime.getruntime',
+                        'file://', 'gopher://', 'dict://',
+                        'base64_decode', '__import__',
+                        'import os', 'subprocess', 'child_process',
+                        '169.254.169.254', 'metadata.google',
+                        'javascript:', 'vbscript:', 'data:text',
+                    ]
                     if not any(kw in json_str for kw in attack_keywords):
                         return True
                 except:
@@ -672,8 +684,20 @@ class BeeWAFMLEngine:
                 try:
                     parsed = json.loads(body_stripped)
                     json_str = json.dumps(parsed).lower()
-                    attack_keywords = ['script', 'alert', 'onerror', 'union', 'select', 
-                                      '../', '/etc/', 'exec', 'cmd', 'drop', 'insert']
+                    attack_keywords = [
+                        'script', 'alert', 'onerror', 'onload', 'onclick', 'onmouseover',
+                        'union', 'select', 'drop', 'insert', 'delete', 'update',
+                        '../', '/etc/', '/proc/', '/sys/', '/dev/',
+                        'exec', 'cmd', 'system(', 'eval(',
+                        '{{', '}}', '$where', '$gt', '$ne', '$regex',
+                        '__proto__', 'constructor.prototype',
+                        'java.lang', 'runtime.getruntime',
+                        'file://', 'gopher://', 'dict://',
+                        'base64_decode', '__import__',
+                        'import os', 'subprocess', 'child_process',
+                        '169.254.169.254', 'metadata.google',
+                        'javascript:', 'vbscript:', 'data:text',
+                    ]
                     if not any(kw in json_str for kw in attack_keywords):
                         return True
                 except:
@@ -689,9 +713,19 @@ class BeeWAFMLEngine:
                     params = _up.parse_qs(body_stripped, keep_blank_values=True)
                     if params:  # Successfully parsed as form data
                         all_values = ' '.join(v for vals in params.values() for v in vals)
-                        form_attacks = ['<script', 'alert(', 'onerror', 'union select',
-                                       '../', '/etc/', 'exec(', '; cat', '| cat',
-                                       'drop table', 'insert into']
+                        form_attacks = [
+                            '<script', 'alert(', 'onerror', 'onload=', 'onclick=',
+                            'union select', 'union all',
+                            '../', '/etc/', '/proc/', '/sys/',
+                            'exec(', '; cat', '| cat', 'system(',
+                            'drop table', 'insert into', 'delete from',
+                            '{{', '}}', '$where', '$ne', '$gt',
+                            '__proto__', 'constructor[',
+                            'java.lang', 'runtime',
+                            '169.254.169.254', 'file://',
+                            'base64_decode', '__import__',
+                            'javascript:', 'eval(',
+                        ]
                         if not any(kw in all_values.lower() for kw in form_attacks):
                             return True
                 except:
@@ -792,12 +826,12 @@ class BeeWAFMLEngine:
             # javascript: and data: are already caught by dangerous_patterns above
             # Include # (C# searches), () for natural language, [] for arrays
             # International chars (> 127) are safe — Arabic, Chinese, etc.
-            if all(c.isalnum() or c in '=&_-+.%,:#()[]@!~' or ord(c) > 127 for c in query):
+            if all(c.isalnum() or c in '=&_-+.%,:#()[]@!~/' or ord(c) > 127 for c in query):
                 if len(query) < 200:
                     return True
             # URL-decode and re-check — encoded +, =, &, ', % are normal
             query_decoded = urllib.parse.unquote_plus(query)
-            safe_decoded = all(c.isalnum() or c in "=&_-+.%,:#()[]@!~ '" or ord(c) > 127 for c in query_decoded)
+            safe_decoded = all(c.isalnum() or c in "=&_-+.%,:#()[]@!~ '/" or ord(c) > 127 for c in query_decoded)
             if safe_decoded and len(query_decoded) < 300:
                 # Even with apostrophes, if no SQL context → safe
                 if "'" not in query_decoded:

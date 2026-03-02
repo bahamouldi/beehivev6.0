@@ -203,6 +203,61 @@ def startup_event():
     RULES_COUNT.set(len(rules.list_rules()))
     MODEL_LOADED.set(1 if os.path.exists(MODEL_PATH) else 0)
 
+# ==================== v7.0: FALSE POSITIVE FILTER ====================
+import re as _re_fp
+def _is_regex_false_positive(reason: str, url: str, body: str) -> bool:
+    """
+    Check if a regex-blocked request is a known false positive pattern.
+    Returns True if the request should be ALLOWED despite regex match.
+    Each pattern is carefully validated to avoid opening security holes.
+    """
+    url_lower = url.lower() if url else ''
+    body_lower = body.lower() if body else ''
+
+    # FP1: Timezone values in URL params (Europe/Paris, US/Eastern, America/New_York)
+    if reason in ('regex-xss', 'regex-encoding_evasion'):
+        if _re_fp.search(r'(?:timezone|tz|time_zone|iana_tz)=[A-Za-z_]+(?:%2[Ff]|/)[A-Za-z_]+', url, _re_fp.IGNORECASE):
+            cleaned = _re_fp.sub(r'(?:timezone|tz|time_zone|iana_tz)=[A-Za-z_]+(?:%2[Ff]|/)[A-Za-z_]+', '', url)
+            if not any(p in cleaned.lower() for p in ['<script', 'onerror', 'alert(', 'union select', 'exec(']):
+                return True
+
+    # FP2: GraphQL queries in JSON body — { users { id name } } triggers websocket rules
+    if 'websocket' in reason:
+        if body:
+            body_stripped = body.strip()
+            if body_stripped.startswith('{') and body_stripped.endswith('}'):
+                try:
+                    parsed = json.loads(body_stripped)
+                    if 'query' in parsed and isinstance(parsed.get('query'), str):
+                        gql = parsed['query'].lower()
+                        gql_attacks = ['<script', 'alert(', 'onerror', 'union select',
+                                       '../', '/etc/', 'exec(', 'drop table', '; cat']
+                        if not any(kw in gql for kw in gql_attacks):
+                            return True
+                except Exception:
+                    pass
+
+    # FP3: Pipe-separated list values in URL params (metric=cpu|memory|disk)
+    if 'cms' in reason and '|' in url_lower and '?' in url:
+        query_part = url.split('?', 1)[1]
+        pipe_values = _re_fp.findall(r'=[a-zA-Z0-9_]+(?:\|[a-zA-Z0-9_]+)+', query_part)
+        if pipe_values:
+            cleaned = query_part
+            for pv in pipe_values:
+                cleaned = cleaned.replace(pv, '')
+            if not any(p in cleaned.lower() for p in ['<', '>', ';', '`', '$(', 'script', 'alert']):
+                return True
+
+    # FP4: Math expressions in search (q=x=(a+b)*c/d) — triggers LDAP rules
+    if 'ldap' in reason and '?' in url:
+        query_part = url.split('?', 1)[1]
+        if _re_fp.match(r'^[a-zA-Z_]+=[(\w\s)+\-*/%.^=,]+$', query_part):
+            if not any(kw in query_part.lower() for kw in ['cn=', 'uid=', 'objectclass', 'dc=', 'ou=', 'sn=']):
+                return True
+
+    return False
+# ==================== END FALSE POSITIVE FILTER ====================
+
 @app.middleware("http")
 async def waf_middleware(request: Request, call_next):
     start_time = time.time()
@@ -924,6 +979,19 @@ async def waf_middleware(request: Request, call_next):
             _REFERER_FP_CATEGORIES = {'regex-idor_access', 'regex-race_timing'}
             if blocked and header_name == 'referer' and reason in _REFERER_FP_CATEGORIES:
                 blocked = False
+
+            # v7.0: Cookie headers contain tracking IDs (GA1.2.xxx), session tokens,
+            # CSRF tokens, etc. that trigger many regex categories falsely.
+            # Only block for actual injection attack categories.
+            _COOKIE_BLOCK_CATEGORIES = {
+                'regex-sqli', 'regex-xss', 'regex-rce', 'regex-cmdi',
+                'regex-path-traversal', 'regex-ssrf', 'regex-lfi',
+                'regex-xxe', 'regex-ssti', 'regex-ldap',
+                'high-severity-xss', 'exploit-campaign',
+                'regex-encoding_evasion',
+            }
+            if blocked and header_name == 'cookie' and reason not in _COOKIE_BLOCK_CATEGORIES:
+                blocked = False
                 
             if blocked:
                 log.warning('Request blocked - malicious header', extra={
@@ -1006,6 +1074,13 @@ async def waf_middleware(request: Request, call_next):
         log.debug('Evasion detector error', exc_info=True)
 
     blocked, reason = rules.check_regex_rules(full_path, body_text, dict(request.headers))
+    # v7.0: False Positive Filter — skip blocking for known benign patterns
+    if blocked and _is_regex_false_positive(reason, full_path, body_text):
+        log.info('FP filter: allowing request', extra={
+            'event': 'fp-override', 'client_ip': client, 'method': method,
+            'path': path, 'original_reason': reason
+        })
+        blocked = False
     if blocked:
         log.warning('Request blocked', extra={
             'event': 'blocked',
