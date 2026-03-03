@@ -2,6 +2,7 @@
 # BeeWAF — Deployment pour cluster DPC (K8s v1.29)
 # Cluster : 3 masters + 2 workers (Ubuntu 22.04, containerd)
 # HAProxy (207.180.211.157) → Nginx Ingress → BeeWAF → App Backend
+# Géré par ArgoCD
 # =============================================================================
 apiVersion: apps/v1
 kind: Deployment
@@ -10,7 +11,7 @@ metadata:
   namespace: beewaf
   labels:
     app: beewaf
-    version: v6.0
+    version: v7.2
 spec:
   replicas: 1
   strategy:
@@ -25,7 +26,7 @@ spec:
     metadata:
       labels:
         app: beewaf
-        version: v6.0
+        version: v7.2
       annotations:
         co.elastic.logs/enabled: "true"
         co.elastic.logs/json.keys_under_root: "true"
@@ -56,7 +57,6 @@ spec:
         - name: ML_MODE
           value: "advanced"
         # === REVERSE PROXY : forward clean traffic to the real app ===
-        # idts-back.idts-test.svc.cluster.local = the Spring Boot backend (default)
         - name: BACKEND_URL
           value: "http://idts-back.idts-test.svc.cluster.local:80"
         # Host-based routing: dev.idts → Angular frontend
@@ -67,6 +67,10 @@ spec:
             secretKeyRef:
               name: beewaf-secrets
               key: BEEWAF_API_KEY
+        - name: BEEWAF_RATE_LIMIT_MAX
+          value: "500"
+        - name: BEEWAF_RATE_LIMIT_WINDOW
+          value: "60"
         resources:
           requests:
             cpu: "200m"

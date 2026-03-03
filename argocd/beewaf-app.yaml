@@ -1,0 +1,69 @@
+# =============================================================================
+# BeeWAF — ArgoCD Application (Cluster DPC)
+# =============================================================================
+# GitOps: ArgoCD surveille le repo GitLab et synchronise automatiquement
+# les manifests K8s quand ils changent.
+#
+# Flux CI/CD complet:
+#   Jenkins (CI) → Build + Test + Transfer Image
+#   ArgoCD (CD)  → Détecte changement dans k8s/ → Sync → Déploiement
+# =============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: beewaf
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: beewaf
+    app.kubernetes.io/part-of: beewaf-waf
+    app.kubernetes.io/managed-by: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://gitlab.dpc.com.tn/DPCProject/beewaf.git
+    targetRevision: main
+    path: k8s
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: beewaf
+
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=false
+      - PrunePropagationPolicy=foreground
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+
+  # Ignorer les changements dynamiques (rollout restart, etc.)
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+        - /spec/template/metadata/annotations/kubectl.kubernetes.io~1restartedAt
+
+  info:
+    - name: Projet
+      value: "BeeWAF - Web Application Firewall"
+    - name: Version
+      value: "v7.2"
+    - name: Cluster
+      value: "DPC Production (K8s v1.29)"
+    - name: Namespace
+      value: "beewaf"
+    - name: GitLab
+      value: "https://gitlab.dpc.com.tn/DPCProject/beewaf"
