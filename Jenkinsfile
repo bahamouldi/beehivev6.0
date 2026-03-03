@@ -328,7 +328,6 @@ pipeline {
         always {
             sh 'docker rm -f beewaf_ci 2>/dev/null || true'
             archiveArtifacts artifacts: '**/test-results.xml, **/bandit-report.json, **/pip-audit-report.json', allowEmptyArchive: true
-            junit testResults: '**/test-results.xml', allowEmptyResults: true
         }
     }
 }
