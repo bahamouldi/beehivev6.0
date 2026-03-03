@@ -102,7 +102,7 @@ pipeline {
                         echo "🔒 Vérification des dépendances..."
                         sh '''
                             . .venv/bin/activate
-                            pip audit --format json --output pip-audit-report.json || echo "⚠️ Vulnérabilités détectées dans les dépendances"
+                            pip-audit --format json --output pip-audit-report.json 2>&1 || echo "⚠️ Vulnérabilités détectées dans les dépendances"
                         '''
                     }
                 }
