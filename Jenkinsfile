@@ -151,26 +151,31 @@ pipeline {
                 echo "🧪 Tests d'intégration..."
                 sh """
                     docker rm -f beewaf_ci || true
-                    docker run -d --name beewaf_ci -p 8000:8000 \
+                    docker run -d --name beewaf_ci \
                         -e BEEWAF_API_KEY=test-key-123 \
                         ${env.IMAGE_NAME}:${env.IMAGE_TAG}
                     
                     sleep 15
                     
+                    # Récupérer l'IP du container
+                    BEEWAF_IP=\$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' beewaf_ci)
+                    echo "BeeWAF IP: \${BEEWAF_IP}"
+                    
                     # Health check
-                    curl -f http://localhost:8000/health || exit 1
+                    curl -f http://\${BEEWAF_IP}:8000/health || exit 1
+                    echo "✅ Health check OK"
                     
                     # Test SQL Injection
-                    curl -s -X POST http://localhost:8000/echo -d "' OR 1=1--" | grep -q "blocked" && echo "✅ SQLi bloqué" || echo "⚠️ SQLi non bloqué"
+                    curl -s -X POST http://\${BEEWAF_IP}:8000/echo -d "' OR 1=1--" | grep -q "blocked" && echo "✅ SQLi bloqué" || echo "⚠️ SQLi non bloqué"
                     
                     # Test XSS
-                    curl -s -X POST http://localhost:8000/echo -d "<script>alert(1)</script>" | grep -q "blocked" && echo "✅ XSS bloqué" || echo "⚠️ XSS non bloqué"
+                    curl -s -X POST http://\${BEEWAF_IP}:8000/echo -d "<script>alert(1)</script>" | grep -q "blocked" && echo "✅ XSS bloqué" || echo "⚠️ XSS non bloqué"
                     
                     # Test Command Injection
-                    curl -s -X POST http://localhost:8000/echo -d "; cat /etc/passwd" | grep -q "blocked" && echo "✅ CMDi bloqué" || echo "⚠️ CMDi non bloqué"
+                    curl -s -X POST http://\${BEEWAF_IP}:8000/echo -d "; cat /etc/passwd" | grep -q "blocked" && echo "✅ CMDi bloqué" || echo "⚠️ CMDi non bloqué"
                     
                     # Test Path Traversal
-                    curl -s "http://localhost:8000/echo?file=../../etc/passwd" | grep -q "blocked" && echo "✅ PathTraversal bloqué" || echo "⚠️ PathTraversal non bloqué"
+                    curl -s "http://\${BEEWAF_IP}:8000/echo?file=../../etc/passwd" | grep -q "blocked" && echo "✅ PathTraversal bloqué" || echo "⚠️ PathTraversal non bloqué"
                     
                     docker rm -f beewaf_ci
                 """
