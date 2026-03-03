@@ -4,24 +4,26 @@
 # ArgoCD détecte automatiquement ce fichier et utilise Kustomize
 # pour appliquer uniquement les ressources listées ci-dessous.
 #
+# IMPORTANT: Le namespace 'beewaf' existe déjà sur le cluster (créé par
+# l'encadrante). On ne le gère PAS ici pour éviter tout conflit.
+#
 # Fichiers NON gérés par ArgoCD (déployés manuellement):
 #   - elk-stack.yaml (ELK déjà déployé)
 #   - beewaf-proxy-deployment.yaml (proxy spécifique)
 #   - ingress-app-protected.yaml (ingress alternatif)
 #   - tls-secret.yaml (géré par cert-manager)
+#   - namespace.yaml (namespace déjà existant)
+#   - ingress.yaml (beewaf.dpc.com.tn — pas nécessaire)
 # =============================================================================
 
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: beewaf
-
-# Seules les ressources core BeeWAF
+# Ressources core BeeWAF (sans namespace — il existe déjà)
 resources:
-  - namespace.yaml
   - secrets.yaml
   - deployment.yaml
   - service.yaml
-  - ingress.yaml
-  - ingress-dev-idts.yaml
   - ingress-beewaf-idts.yaml
+  - ingress-dev-idts.yaml
+  - ingress-idts-back.yaml
