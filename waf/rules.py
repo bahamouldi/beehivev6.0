@@ -36,6 +36,21 @@ SQLI_PATTERNS = [
     r"\bpg_catalog\b",  # PostgreSQL pg_catalog
     r"\bxp_cmdshell\b",  # SQL Server xp_cmdshell
     r"\bxp_regread\b",  # SQL Server xp_regread
+    # === v7.1 Bypass fix patterns ===
+    r"\)\s*(?:AND|OR)\s*\(",                          # Parenthesized blind: 1)AND(1)=(1
+    r"\d+(?:[eE]\d*|\.\d*)\s*(?:UNION|SELECT)\b",     # Scientific notation: 1e0UNION SELECT
+    r"\bCASE[\s+]+WHEN\b",                               # CASE WHEN blind SQLi (matches + URL-encoding)
+    r"\bIF\s*\(\s*\d+\s*[=<>!]+\s*\d+\s*,",           # IF(1=1,id,name) sort injection
+    # === v7.2 Bypass fix patterns ===
+    r"\bUNION\s*\(",                                     # UNION( spaceless: UNION(SELECT(1))
+    r"\(\s*SELECT\b",                                     # (SELECT subquery: (SELECT(1)FROM(users))
+    r"\b(?:XOR|DIV|MOD)\b\s+\(?",                        # XOR/DIV/MOD operators with optional subquery
+    r"\bRLIKE\b",                                         # RLIKE regex match (MySQL-specific)
+    r"\bREGEXP\b\s+\(?",                                  # REGEXP with optional subquery
+    r"\bGROUP\s+BY\b.*?\bHAVING\b",                       # GROUP BY...HAVING
+    r"\bHAVING\b\s+\w+\s*[><=!]",                         # HAVING col>0 (with comparison)
+    r"\bELT\s*\(",                                        # ELT() MySQL function
+    r"\bMAKE_SET\s*\(",                                   # MAKE_SET() MySQL function
 ]
 
 # ==================== XSS PATTERNS ====================
@@ -751,10 +766,22 @@ def _is_safe_request(path: str, body: str) -> bool:
         if not any(s in decoded_qs for s in attack_syms):
             if all(c.isalnum() or c in "=&_-+.%,:#()[]@!~ '$" or ord(c) > 127 for c in decoded_qs):
                 if len(decoded_qs) < 500:
-                    # Extra check: if parentheses are present, ensure no function call pattern
+                    # Extra check: if parentheses are present, ensure no function call or SQL pattern
                     if '(' in decoded_qs:
-                        if _re2.search(r'\w\(', decoded_qs):
-                            pass  # Might be an attack, don't mark safe
+                        dql_paren = decoded_qs.lower()
+                        # Check for SQL keywords near parens (subquery patterns)
+                        sql_paren_patterns = [
+                            'select(', '(select', 'union(', '(union',
+                            'from(', '(from', 'where(', '(where',
+                            'xor ', 'div ', 'mod ', 'rlike ', 'regexp ',
+                            'having ', 'group by', 'elt(', 'make_set(',
+                            'union select', 'select ', ' from ',
+                            'case when', 'if(', ')and(', ')or(',
+                        ]
+                        if any(p in dql_paren for p in sql_paren_patterns):
+                            pass  # SQL subquery/keyword found
+                        elif _re2.search(r'\w\(', decoded_qs):
+                            pass  # Function call pattern like func()
                         else:
                             return True  # Standalone parens like "(test)"
                     else:
@@ -763,7 +790,10 @@ def _is_safe_request(path: str, body: str) -> bool:
                         sql_patterns = [
                             'union select', 'union all', 'select ', ' from ',
                             'insert into', 'update ', 'delete from', 'drop ',
-                            'waitfor', 'benchmark', 'sleep ',
+                            'waitfor', 'benchmark', 'sleep ', 'case when',
+                            'if(', ')and(', ')or(',
+                            ' xor ', ' div ', ' mod ', 'rlike ', 'regexp ',
+                            'having ', 'group by', 'elt(', 'make_set(',
                         ]
                         # Check for NoSQL operators
                         nosql_patterns = ['[$', '{$', '$gt', '$ne', '$lt', '$regex', '$where']
@@ -794,8 +824,17 @@ def _is_safe_request(path: str, body: str) -> bool:
                     bl = decoded_body.lower()
                     # Reject if it contains deser/attack markers
                     deser_bad = ['rO0AB', 'aced0005', 'O:', '__proto__', 'constructor']
+                    sql_bad = ['union select', 'union all', 'case when', 'select ',
+                               'insert into', 'update ', 'delete from', 'drop ',
+                               ')and(', ')or(', 'if(', '(select', 'union(',
+                               ' xor ', ' div ', ' mod ', 'rlike ', 'regexp ',
+                               'having ', 'group by', 'elt(', 'make_set(']
                     if any(p in decoded_body for p in deser_bad):
                         pass
+                    elif any(p in bl for p in sql_bad):
+                        pass  # SQL keywords in body, don't mark safe
+                    elif _re2.search(r'\w\(', decoded_body):
+                        pass  # Function call pattern in body
                     else:
                         return True
     return False
@@ -820,6 +859,14 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
         (re.compile(r'on(?:error|load|click|focus|mouseover)\s*=', re.I), 'xss'),
         (re.compile(r'\$\([^)]+\)', 0), 'rce'),
         (re.compile(r'`[^`]+`', 0), 'rce'),
+        # === v7.1 Bypass fixes (always block, even on ALLOW_PATHS) ===
+        (re.compile(r'\d\)\s*(?:AND|OR)\s*\(\s*(?:\d|SELECT\b)', re.I), 'sql-injection'),
+        (re.compile(r'\d+(?:[eE]\d*|\.\d*)\s*(?:UNION|SELECT)\b', re.I), 'sql-injection'),
+        (re.compile(r'\bCASE[\s+]+WHEN\b.*?\bTHEN\b', re.I), 'sql-injection'),
+        (re.compile(r'\bIF\s*\(\s*\d+\s*[=<>!]+\s*\d+\s*,', re.I), 'sql-injection'),
+        # === v7.2 Subquery & operator bypasses ===
+        (re.compile(r'\(\s*SELECT\b', re.I), 'sql-injection'),
+        (re.compile(r'\bUNION\s*\(\s*SELECT\b', re.I), 'sql-injection'),
     ]
     
     # Malicious header patterns that should ALWAYS be blocked, even on ALLOW_PATHS
@@ -844,8 +891,9 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
     if body or path:
         check_target = (path or '') + ' ' + (body or '')
         decoded_target = urllib.parse.unquote(check_target)
+        decoded_target_plus = urllib.parse.unquote_plus(check_target)
         for pat, kind in HIGH_SEVERITY_PATTERNS:
-            if pat.search(check_target) or pat.search(decoded_target):
+            if pat.search(check_target) or pat.search(decoded_target) or pat.search(decoded_target_plus):
                 return True, f"high-severity-{kind}"
     
     # Check malicious headers (always active, even on allowed paths)
@@ -876,13 +924,16 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
     # Decode URL encoding to detect obfuscated attacks
     decoded_path = urllib.parse.unquote(path or '') if path else ''
     decoded_body = urllib.parse.unquote(body or '') if body else ''
+    decoded_path_plus = urllib.parse.unquote_plus(path or '') if path else ''
+    decoded_body_plus = urllib.parse.unquote_plus(body or '') if body else ''
     
-    # Check both original and decoded versions
+    # Check original, unquote-decoded, and unquote_plus-decoded versions
     target = ' '.join([path or '', body or '', _headers_to_text(headers or {})])
     decoded_target = ' '.join([decoded_path, decoded_body, _headers_to_text(headers or {})])
+    decoded_target_plus = ' '.join([decoded_path_plus, decoded_body_plus, _headers_to_text(headers or {})])
     
     for pat, kind in COMPILED_RULES:
-        if pat.search(target) or pat.search(decoded_target):
+        if pat.search(target) or pat.search(decoded_target) or pat.search(decoded_target_plus):
             return True, f"regex-{kind}"
     return False, None
 

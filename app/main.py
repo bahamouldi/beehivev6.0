@@ -1013,7 +1013,7 @@ async def waf_middleware(request: Request, call_next):
     import re as _re
     _header_injection_re = _re.compile(
         r'(?i)(?:(?:\r\n|\n|\r)[\w-]+\s*:|<script|javascript:|'
-        r'\$\{jndi:|union\s+select|;\s*(?:cat|wget|curl|nc|bash)\s|'
+        r'\$\{jndi:|\$\(|`[^`]+`|union\s+select|;\s*(?:cat|wget|curl|nc|bash)\s|'
         r'(?:\.\.[\\/]){2,}|/etc/passwd|/etc/shadow)',
         _re.IGNORECASE
     )
@@ -1021,6 +1021,7 @@ async def waf_middleware(request: Request, call_next):
         'user-agent', 'x-forwarded-for', 'x-real-ip', 'x-client-ip',
         'client-ip', 'true-client-ip', 'x-forwarded-host', 'x-host',
         'x-forwarded-proto', 'authorization', 'x-api-key', 'accept',
+        'accept-language', 'accept-encoding',
         'x-backend-host', 'forwarded', 'range', 'if-modified-since',
     ]
     for header_name in _infra_headers:

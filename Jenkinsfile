@@ -74,7 +74,7 @@ pipeline {
                     . .venv/bin/activate
                     pip install --upgrade pip setuptools wheel
                     pip install -r requirements.txt
-                    pip install pytest pytest-cov safety bandit
+                    pip install pytest pytest-cov pip-audit bandit
                 '''
             }
         }
@@ -92,7 +92,7 @@ pipeline {
             }
             post {
                 always {
-                    junit 'test-results.xml' allowEmptyResults: true
+                    junit allowEmptyResults: true, testResults: 'test-results.xml'
                 }
             }
         }
@@ -107,7 +107,7 @@ pipeline {
                         echo "🔒 Vérification des dépendances..."
                         sh '''
                             . .venv/bin/activate
-                            safety check --json || echo "⚠️ Vulnérabilités détectées"
+                            pip audit --format json --output pip-audit-report.json || echo "⚠️ Vulnérabilités détectées dans les dépendances"
                         '''
                     }
                 }
@@ -149,13 +149,13 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 echo "🧪 Tests d'intégration..."
-                sh '''
+                sh """
                     docker rm -f beewaf_ci || true
                     docker run -d --name beewaf_ci -p 8000:8000 \
                         -e BEEWAF_API_KEY=test-key-123 \
-                        ${IMAGE_NAME}:${IMAGE_TAG}
+                        ${env.IMAGE_NAME}:${env.IMAGE_TAG}
                     
-                    sleep 10
+                    sleep 15
                     
                     # Health check
                     curl -f http://localhost:8000/health || exit 1
@@ -166,8 +166,14 @@ pipeline {
                     # Test XSS
                     curl -s -X POST http://localhost:8000/echo -d "<script>alert(1)</script>" | grep -q "blocked" && echo "✅ XSS bloqué" || echo "⚠️ XSS non bloqué"
                     
+                    # Test Command Injection
+                    curl -s -X POST http://localhost:8000/echo -d "; cat /etc/passwd" | grep -q "blocked" && echo "✅ CMDi bloqué" || echo "⚠️ CMDi non bloqué"
+                    
+                    # Test Path Traversal
+                    curl -s "http://localhost:8000/echo?file=../../etc/passwd" | grep -q "blocked" && echo "✅ PathTraversal bloqué" || echo "⚠️ PathTraversal non bloqué"
+                    
                     docker rm -f beewaf_ci
-                '''
+                """
             }
         }
         
@@ -189,26 +195,32 @@ pipeline {
                     // Sauvegarder l'image
                     sh "docker save ${env.IMAGE_NAME}:${env.IMAGE_TAG} | gzip > /tmp/beewaf-${env.IMAGE_TAG}.tar.gz"
                     
-                    // Transférer via la chaîne SSH
-                    // Étape 1: Kali/Jenkins → Passerelle
-                    sh """
-                        scp -P ${env.PASSERELLE_PORT} \
-                            /tmp/beewaf-${env.IMAGE_TAG}.tar.gz \
-                            ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST}:/tmp/
-                    """
-                    
-                    // Étape 2: Passerelle → HAProxy
-                    sh """
-                        ssh -p ${env.PASSERELLE_PORT} ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} \
-                            "scp -P ${env.HAPROXY_PORT} /tmp/beewaf-${env.IMAGE_TAG}.tar.gz ${env.HAPROXY_USER}@${env.HAPROXY_HOST}:/tmp/"
-                    """
-                    
-                    // Étape 3: HAProxy → Master
-                    sh """
-                        ssh -p ${env.PASSERELLE_PORT} ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} \
-                            "ssh -p ${env.HAPROXY_PORT} ${env.HAPROXY_USER}@${env.HAPROXY_HOST} \
-                            'scp /tmp/beewaf-${env.IMAGE_TAG}.tar.gz ${env.MASTER_USER}@${env.MASTER_HOST}:/tmp/'"
-                    """
+                    sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+                        // Étape 1: Kali/Jenkins → Passerelle
+                        sh """
+                            scp -o StrictHostKeyChecking=no \
+                                -P ${env.PASSERELLE_PORT} \
+                                /tmp/beewaf-${env.IMAGE_TAG}.tar.gz \
+                                ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST}:/tmp/
+                        """
+                        
+                        // Étape 2: Passerelle → HAProxy
+                        sh """
+                            ssh -o StrictHostKeyChecking=no \
+                                -p ${env.PASSERELLE_PORT} \
+                                ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} \
+                                'scp -o StrictHostKeyChecking=no -P ${env.HAPROXY_PORT} /tmp/beewaf-${env.IMAGE_TAG}.tar.gz ${env.HAPROXY_USER}@${env.HAPROXY_HOST}:/tmp/'
+                        """
+                        
+                        // Étape 3: HAProxy → Master
+                        sh """
+                            ssh -o StrictHostKeyChecking=no \
+                                -p ${env.PASSERELLE_PORT} \
+                                ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} \
+                                'ssh -o StrictHostKeyChecking=no -p ${env.HAPROXY_PORT} ${env.HAPROXY_USER}@${env.HAPROXY_HOST} \
+                                \"scp -o StrictHostKeyChecking=no /tmp/beewaf-${env.IMAGE_TAG}.tar.gz ${env.MASTER_USER}@${env.MASTER_HOST}:/tmp/\"'
+                        """
+                    }
                 }
                 
                 echo "✅ Image transférée vers le Master"
@@ -230,35 +242,24 @@ pipeline {
                 echo "🚀 Déploiement sur le cluster..."
                 
                 script {
-                    // Exécuter les commandes de déploiement sur le Master
-                    sh """
-                        ssh -p ${env.PASSERELLE_PORT} ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} << 'ENDSSH'
-ssh -p ${env.HAPROXY_PORT} ${env.HAPROXY_USER}@${env.HAPROXY_HOST} << 'ENDSSH2'
-ssh ${env.MASTER_USER}@${env.MASTER_HOST} << 'ENDSSH3'
-sudo su << 'ENDROOT'
-
-# Importer l'image
-echo "Import de l'image..."
-ctr -n k8s.io images import /tmp/beewaf-${env.IMAGE_TAG}.tar.gz || echo "Import déjà fait"
-
-# Tag en latest
-ctr -n k8s.io images tag beewaf:${env.IMAGE_TAG} beewaf:latest || true
-
-# Rollout
-echo "Rollout du déploiement..."
-kubectl rollout restart deployment/beewaf -n beewaf
-kubectl rollout status deployment/beewaf -n beewaf --timeout=120s
-
-# Vérification
-echo "Vérification..."
-POD=\$(kubectl get pod -n beewaf -l app=beewaf -o jsonpath='{.items[0].metadata.name}')
-kubectl exec \$POD -n beewaf -- curl -s http://localhost:8000/health
-
-ENDROOT
-ENDSSH3
-ENDSSH2
-ENDSSH
-                    """
+                    def imageTag = env.IMAGE_TAG
+                    
+                    sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+                        // Script de déploiement distant
+                        sh """
+                            ssh -o StrictHostKeyChecking=no \
+                                -p ${env.PASSERELLE_PORT} \
+                                ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} \
+                                'ssh -o StrictHostKeyChecking=no \
+                                    -p ${env.HAPROXY_PORT} \
+                                    ${env.HAPROXY_USER}@${env.HAPROXY_HOST} \
+                                    "ssh -o StrictHostKeyChecking=no \
+                                        ${env.MASTER_USER}@${env.MASTER_HOST} \
+                                        \\"sudo ctr -n k8s.io images import /tmp/beewaf-${imageTag}.tar.gz && \
+                                           sudo kubectl rollout restart deployment/beewaf -n beewaf && \
+                                           sudo kubectl rollout status deployment/beewaf -n beewaf --timeout=120s\\""'
+                        """
+                    }
                 }
                 
                 echo "✅ Déploiement terminé"
@@ -279,29 +280,24 @@ ENDSSH
             steps {
                 echo "🔍 Vérification du déploiement..."
                 
-                sh """
-                    ssh -p ${env.PASSERELLE_PORT} ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} << 'ENDSSH'
-ssh -p ${env.HAPROXY_PORT} ${env.HAPROXY_USER}@${env.HAPROXY_HOST} << 'ENDSSH2'
-ssh ${env.MASTER_USER}@${env.MASTER_HOST} << 'ENDSSH3'
-sudo su << 'ENDROOT'
-
-echo "=== PODS ==="
-kubectl get pods -n beewaf -o wide
-
-echo ""
-echo "=== SERVICES ==="
-kubectl get svc -n beewaf
-
-echo ""
-echo "=== HEALTH CHECK ==="
-POD=\$(kubectl get pod -n beewaf -l app=beewaf -o jsonpath='{.items[0].metadata.name}')
-kubectl exec \$POD -n beewaf -- curl -s http://localhost:8000/health
-
-ENDROOT
-ENDSSH3
-ENDSSH2
-ENDSSH
-                """
+                script {
+                    sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+                        sh """
+                            ssh -o StrictHostKeyChecking=no \
+                                -p ${env.PASSERELLE_PORT} \
+                                ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} \
+                                'ssh -o StrictHostKeyChecking=no \
+                                    -p ${env.HAPROXY_PORT} \
+                                    ${env.HAPROXY_USER}@${env.HAPROXY_HOST} \
+                                    "ssh -o StrictHostKeyChecking=no \
+                                        ${env.MASTER_USER}@${env.MASTER_HOST} \
+                                        \\"sudo kubectl get pods -n beewaf -o wide && \
+                                           sudo kubectl get svc -n beewaf && \
+                                           echo && echo HEALTH_CHECK: && \
+                                           sudo kubectl exec \\\$(sudo kubectl get pod -n beewaf -l app=beewaf -o jsonpath=\'{.items[0].metadata.name}\') -n beewaf -- curl -s http://localhost:8000/health\\""'
+                        """
+                    }
+                }
             }
         }
     }
