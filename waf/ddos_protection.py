@@ -19,6 +19,7 @@ import time
 import math
 import logging
 import hashlib
+import os
 from collections import defaultdict, deque
 from threading import Lock, Thread
 from typing import Optional
@@ -58,6 +59,8 @@ class ConnectionTracker:
         # Request-based tracking (not connection-based for HTTP/1.1 keep-alive)
         self.request_counts = defaultdict(lambda: deque(maxlen=1000))
         self.last_cleanup = time.time()
+        # Per-IP request cap (requests/min). Default aligns with DDoS warn threshold (50 rps).
+        self.max_requests_per_minute = int(os.environ.get('BEEWAF_DDOS_RPM_LIMIT', '3000'))
 
     def check_request_rate(self, client_ip: str) -> dict:
         """Check request rate per IP (more accurate than connection tracking for HTTP)."""
@@ -75,12 +78,12 @@ class ConnectionTracker:
             cutoff = now - 60
             recent_requests = sum(1 for t in self.request_counts[client_ip] if t > cutoff)
             
-            # Allow up to 300 requests per minute per IP (very generous)
-            if recent_requests > 300:
+            # Allow up to N requests per minute per IP (configurable)
+            if recent_requests > self.max_requests_per_minute:
                 self.stats["rejected"] += 1
                 return {
                     "allowed": False,
-                    "reason": f"request_flood:requests={recent_requests}/300 per minute",
+                    "reason": f"request_flood:requests={recent_requests}/{self.max_requests_per_minute} per minute",
                     "requests": recent_requests
                 }
             
@@ -115,12 +118,12 @@ class SlowAttackDetector:
     def __init__(self):
         self.active_requests = {}  # request_id -> {start, ip, bytes_received, last_data}
         self.lock = Lock()
-        # Thresholds
-        self.header_timeout = 10  # seconds to complete headers
-        self.body_timeout = 30  # seconds to complete body
-        self.min_body_rate = 100  # bytes/second minimum
-        self.read_timeout = 60  # slow read timeout
-        self.min_read_rate = 50  # bytes/second minimum read
+        # Thresholds (configurable via env for testing)
+        self.header_timeout = int(os.environ.get('BEEWAF_DDOS_HEADER_TIMEOUT', '10'))  # seconds to complete headers
+        self.body_timeout = int(os.environ.get('BEEWAF_DDOS_BODY_TIMEOUT', '30'))  # seconds to complete body
+        self.min_body_rate = int(os.environ.get('BEEWAF_DDOS_MIN_BODY_RATE', '100'))  # bytes/second minimum
+        self.read_timeout = int(os.environ.get('BEEWAF_DDOS_READ_TIMEOUT', '60'))  # slow read timeout
+        self.min_read_rate = int(os.environ.get('BEEWAF_DDOS_MIN_READ_RATE', '50'))  # bytes/second minimum read
         self.stats = {
             "slowloris_detected": 0,
             "slow_post_detected": 0,
@@ -466,8 +469,8 @@ class DDoSProtectionEngine:
         self.blocked_ips = {}  # ip -> block_time (changed from set to dict for timeout)
         self.throttled_ips = {}  # ip -> unblock_time
         self.lock = Lock()
-        # Auto-unblock after 5 minutes (configurable)
-        self.block_duration = 300  # seconds
+        # Auto-unblock after 15 minutes (production-ready)
+        self.block_duration = 900  # seconds
         self.last_cleanup = time.time()
 
     def _cleanup_expired_blocks(self):

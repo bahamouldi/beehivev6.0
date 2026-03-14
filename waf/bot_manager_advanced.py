@@ -684,7 +684,7 @@ class AdvancedBotManager:
         # Determine action
         final_score = min(total_score, 1.0)
 
-        if final_score >= 0.8:
+        if final_score >= 0.85:
             action = "block"
             with self.lock:
                 self.stats["bots_detected"] += 1

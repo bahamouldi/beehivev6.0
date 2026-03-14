@@ -17,7 +17,7 @@ from collections import defaultdict
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-BASE = "https://127.0.0.1"
+BASE = "http://127.0.0.1:8000"
 API_KEY = "supersecret-beewaf-admin-key-2026"
 TIMEOUT = 30
 HEADERS_JSON = {"Content-Type": "application/json"}

@@ -59,7 +59,7 @@ spec:
         # === REVERSE PROXY : forward clean traffic to the real app ===
         - name: BACKEND_URL
           value: "http://idts-back.idts-test.svc.cluster.local:80"
-        # Host-based routing: dev.idts → Angular frontend
+        # Host-based routing: dev.idts → Angular frontend, kairos → backends
         - name: BACKEND_MAP
           value: '{"dev.idts.dpc.com.tn":"http://idts-front-service.idts-test.svc.cluster.local:80","idts.back.dpc.com.tn":"http://idts-back.idts-test.svc.cluster.local:80","front.kairos.dpc.com.tn":"http://kairos-front-service.kairos-test.svc.cluster.local:80","dev.kairos.dpc.com.tn":"http://kairos-back-dev.kairos-test.svc.cluster.local:80"}'
         - name: BEEWAF_API_KEY
@@ -71,6 +71,12 @@ spec:
           value: "500"
         - name: BEEWAF_RATE_LIMIT_WINDOW
           value: "60"
+        # DDoS tuning (request/min cap before flood detection)
+        - name: BEEWAF_DDOS_RPM_LIMIT
+          value: "3000"
+        # DDoS throttle mode: delay (default) or block (strict)
+        - name: BEEWAF_DDOS_THROTTLE_MODE
+          value: "delay"
         resources:
           requests:
             cpu: "200m"

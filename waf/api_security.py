@@ -331,13 +331,13 @@ class APIEndpointRateLimiter:
         self._sensitive_patterns = {
             # Auth endpoints — limiter seulement les POST (tentatives de connexion)
             # PAS les GET (chargement de la page de login)
-            r'POST:/api/v\d+/auth/login': (20, 60),       # 20 login POST par minute
-            r'POST:/api/v\d+/auth/register': (10, 60),    # 10 registrations par minute
-            r'POST:/api/v\d+/auth/reset': (5, 300),       # 5 resets par 5 minutes
-            r'POST:/api/v\d+/auth/forgot': (5, 300),
-            r'POST:/api/auth/login': (20, 60),
-            r'POST:/login': (20, 60),                     # 20 POST login par minute
-            r'POST:/register': (10, 60),
+            r'POST:/api/v\d+/auth/login': (5, 60),        # 5 login POST par minute (OWASP)
+            r'POST:/api/v\d+/auth/register': (5, 60),     # 5 registrations par minute
+            r'POST:/api/v\d+/auth/reset': (3, 300),       # 3 resets par 5 minutes
+            r'POST:/api/v\d+/auth/forgot': (3, 300),
+            r'POST:/api/auth/login': (5, 60),
+            r'POST:/login': (5, 60),                      # 5 POST login par minute (OWASP)
+            r'POST:/register': (5, 60),
             r'POST:/signup': (10, 60),
 
             # Admin — limiter mais pas trop

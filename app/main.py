@@ -7,6 +7,7 @@ import secrets
 import time
 import json
 import httpx
+import asyncio
 from datetime import datetime
 from pythonjsonlogger.json import JsonFormatter
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
@@ -94,6 +95,12 @@ def get_proxy_client(host: str = '') -> httpx.AsyncClient:
         return _get_client_for_url(BACKEND_URL)
     return None
 
+# Internal control-flow exception for slow-attack aborts
+class _SlowAttackAbort(Exception):
+    def __init__(self, alert: dict):
+        super().__init__("slow-attack")
+        self.alert = alert
+
 # JSON Logging Configuration for ELK Stack
 class CustomJsonFormatter(JsonFormatter):
     def add_fields(self, log_record, record, message_dict):
@@ -153,14 +160,23 @@ MODEL_LOADED = Gauge(
     'Whether the anomaly detection model is loaded (1=yes, 0=no)'
 )
 
-app = FastAPI()
+app = FastAPI(
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+    title="BeeWAF",
+    version="7.2"
+)
 
-# Rate limiter: 100 requests per minute per IP (realistic production value)
-rate_limiter = RateLimiter(max_requests=100, window_seconds=60)
-# IP blocklist: auto-block after 50 detected attacks, ban for 10 minutes
-# Increased threshold from 10 to 50 to prevent false positives from shared IPs (proxy/NAT)
-# Reduced duration from 3600s (1h) to 600s (10min) for faster recovery
-ip_blocklist = IPBlocklist(block_threshold=50, block_duration=600)
+# Rate limiter: reads from env vars BEEWAF_RATE_LIMIT_MAX (default 200) and BEEWAF_RATE_LIMIT_WINDOW (default 60)
+# These env vars are set in k8s/deployment.yaml (currently 500/60)
+_rl_max = int(os.environ.get('BEEWAF_RATE_LIMIT_MAX', '200'))
+_rl_window = int(os.environ.get('BEEWAF_RATE_LIMIT_WINDOW', '60'))
+rate_limiter = RateLimiter(max_requests=_rl_max, window_seconds=_rl_window)
+# IP blocklist: auto-block after 20 detected attacks, ban for 15 minutes (900s)
+# Threshold 20 = strict enough for real attacks, forgiving for shared IPs (NAT/proxy)
+# Duration 900s (15min) = strong deterrent without permanent lockout
+ip_blocklist = IPBlocklist(block_threshold=20, block_duration=900)
 MODEL_PATH = os.environ.get('BEEWAF_MODEL_PATH','models/model.pkl')
 ML_ENGINE_PATH = os.environ.get('BEEWAF_ML_ENGINE_PATH', 'models/ml_engine.pkl')
 TRAIN_DATA = os.environ.get('BEEWAF_TRAIN_DATA','data/train_demo.csv')
@@ -420,7 +436,10 @@ async def waf_middleware(request: Request, call_next):
         '/actuator', '/actuator/env', '/actuator/health',
         '/__debug__', '/debug', '/trace', '/console',
         '/phpmyadmin', '/adminer.php', '/manager',
-        '/proc/self', '/etc/passwd', '/etc/shadow'
+        '/proc/self', '/etc/passwd', '/etc/shadow',
+        '/openapi.json', '/docs', '/redoc',
+        '/Dockerfile', '/docker-compose.yml', '/docker-compose.yaml',
+        '/.dockerignore', '/Jenkinsfile', '/Makefile'
     ]
     path_lower = path.lower()
     for sensitive in SENSITIVE_PATHS:
@@ -541,11 +560,21 @@ async def waf_middleware(request: Request, call_next):
     # Combine path and query for WAF checking
     full_path = f"{path}?{query_string}" if query_string else path
     
-    # Skip ONLY health and metrics endpoints from WAF processing
-    # DO NOT skip root path - it must be validated!
-    if path in ['/metrics', '/health'] and not query_string:
+    # Skip ONLY health endpoint from WAF processing (for K8s liveness/readiness probes)
+    # /metrics is now protected and requires internal IP
+    if path == '/health' and not query_string:
         ACTIVE_REQUESTS.dec()
         return await call_next(request)
+    
+    # /metrics restricted to internal IPs only (K8s probes, Prometheus scraper)
+    if path == '/metrics' and not query_string:
+        if client and (client.startswith('10.') or client.startswith('192.168.') or client.startswith('172.') or client == '127.0.0.1'):
+            ACTIVE_REQUESTS.dec()
+            return await call_next(request)
+        else:
+            ACTIVE_REQUESTS.dec()
+            log.warning('Metrics access denied - external IP', extra={'client_ip': client, 'path': path})
+            return JSONResponse(status_code=403, content={"blocked": True, "reason": "metrics-access-denied"})
 
     # ========== STATIC FILE FAST-PATH (critical performance fix) ==========
     # Angular/React/Vue apps serve large JS/CSS bundles from root path.
@@ -568,11 +597,20 @@ async def waf_middleware(request: Request, call_next):
         return response
     # ========== END STATIC FILE FAST-PATH ==========
 
+    # Parse content-length early (used by DDoS slow detection)
+    try:
+        content_length = int(request.headers.get('content-length') or 0)
+    except ValueError:
+        content_length = 0
+
+    ddos_engine = None
     # ========== v5.0: DDoS PROTECTION ==========
     try:
         ddos_engine = ddos_protection.get_engine()
         _ua = request.headers.get('user-agent', '')
-        ddos_result = ddos_engine.check_request(client, path, method, _ua, dict(request.headers))
+        ddos_result = ddos_engine.check_request(
+            client, path, method, _ua, dict(request.headers), content_length=content_length
+        )
         if ddos_result.get('action') == 'block':
             reason_str = ddos_result.get('reason', 'ddos-detected')
             log.warning('Request blocked - DDoS protection', extra={
@@ -584,6 +622,24 @@ async def waf_middleware(request: Request, call_next):
             BLOCKED_TOTAL.labels(reason='ddos-protection').inc()
             ACTIVE_REQUESTS.dec()
             return JSONResponse(status_code=429, content={"blocked": True, "reason": reason_str})
+        if ddos_result.get('action') == 'throttle':
+            # Configurable: delay (default) or block (for testing/strict mode)
+            throttle_mode = os.environ.get('BEEWAF_DDOS_THROTTLE_MODE', 'delay').lower()
+            if throttle_mode == 'block':
+                reason_str = ddos_result.get('reason', 'ddos-throttle')
+                log.warning('Request blocked - DDoS throttle', extra={
+                    'event': 'blocked', 'client_ip': client, 'method': method,
+                    'path': path, 'reason': reason_str,
+                    'attack_type': ddos_result.get('attack_type', 'http_flood_throttle'),
+                    'status_code': 429
+                })
+                BLOCKED_TOTAL.labels(reason='ddos-protection').inc()
+                ACTIVE_REQUESTS.dec()
+                return JSONResponse(status_code=429, content={"blocked": True, "reason": reason_str})
+            # Apply a short async delay to slow abusive clients
+            delay_ms = int(ddos_result.get('delay_ms', 200))
+            if delay_ms > 0:
+                await asyncio.sleep(min(delay_ms, 2000) / 1000.0)
     except Exception:
         log.debug('DDoS protection error', exc_info=True)
 
@@ -597,7 +653,44 @@ async def waf_middleware(request: Request, call_next):
     except Exception:
         log.debug('Performance engine error', exc_info=True)
     
-    body = await request.body()
+    slow_alert = None
+    slow_request_id = None
+    if ddos_engine:
+        slow_request_id = f"{client}:{int(time.time() * 1000)}:{id(request)}"
+        try:
+            ddos_engine.slow_detector.start_request(slow_request_id, client, content_length)
+            original_receive = request._receive
+            bytes_received = 0
+
+            async def timed_receive():
+                nonlocal bytes_received, slow_alert
+                message = await original_receive()
+                if message.get("type") == "http.request":
+                    chunk = message.get("body", b"") or b""
+                    if chunk:
+                        bytes_received += len(chunk)
+                    headers_complete = True
+                    alert = ddos_engine.slow_detector.update_progress(
+                        slow_request_id, bytes_received, headers_complete=headers_complete
+                    )
+                    if alert and slow_alert is None:
+                        slow_alert = alert
+                        raise _SlowAttackAbort(alert)
+                return message
+
+            request._receive = timed_receive
+        except Exception:
+            log.debug('Slow attack setup error', exc_info=True)
+
+    try:
+        body = await request.body()
+    except _SlowAttackAbort as exc:
+        slow_alert = exc.alert
+        body = b''
+    finally:
+        if ddos_engine and slow_request_id:
+            ddos_engine.slow_detector.end_request(slow_request_id)
+
     body_text = body.decode('utf-8', errors='ignore') if body else ''
     
     # Store body for later use (avoid double reading)
@@ -605,6 +698,24 @@ async def waf_middleware(request: Request, call_next):
         return {"type": "http.request", "body": body}
     
     request._receive = receive
+
+    if slow_alert:
+        reason_str = f"ddos_{slow_alert.get('attack', 'slow')}"
+        log.warning('Request blocked - slow attack', extra={
+            'event': 'blocked', 'client_ip': client, 'method': method,
+            'path': path, 'reason': reason_str,
+            'attack_type': slow_alert.get('attack', 'slow'),
+            'status_code': 429
+        })
+        if ddos_engine and hasattr(ddos_engine, '_escalate'):
+            ddos_engine._escalate(client, slow_alert.get('attack', 'slow'))
+        BLOCKED_TOTAL.labels(reason='ddos-protection').inc()
+        ACTIVE_REQUESTS.dec()
+        return JSONResponse(status_code=429, content={"blocked": True, "reason": reason_str})
+
+    request_size = len(body) + len(path) + len(query_string)
+    for k, v in request.headers.items():
+        request_size += len(k) + len(v)
 
     # ========== v6.0: BUSINESS LOGIC BODY CHECKS ==========
     if body_text and method in ('POST', 'PUT', 'PATCH'):
@@ -1226,6 +1337,8 @@ async def waf_middleware(request: Request, call_next):
     # passthrough
     response = await call_next(request)
     latency = time.time() - start_time
+    resp_body = None
+    resp_body_final = None
     
     # ========== DLP RESPONSE SCANNING ==========
     try:
@@ -1284,7 +1397,6 @@ async def waf_middleware(request: Request, call_next):
         if cloaked_headers:
             from starlette.responses import Response as StarletteResponse
             # Read body if not already read
-            resp_body_final = None
             try:
                 resp_body_parts_final = []
                 async for chunk in response.body_iterator:
@@ -1314,6 +1426,32 @@ async def waf_middleware(request: Request, call_next):
     except Exception:
         log.debug('Response cloaking error', exc_info=True)
     # ========== END RESPONSE CLOAKING ==========
+
+    # ========== v5.0: AMPLIFICATION CHECK (response >> request) ==========
+    try:
+        response_size = 0
+        if resp_body_final is not None:
+            response_size = len(resp_body_final)
+        elif resp_body is not None:
+            response_size = len(resp_body)
+        else:
+            try:
+                response_size = int(response.headers.get('content-length') or 0)
+            except ValueError:
+                response_size = 0
+
+        if ddos_engine and request_size > 0 and response_size > 0:
+            amp_alert = ddos_engine.check_response(client, request_size, response_size)
+            if amp_alert:
+                log.warning('DDoS amplification detected', extra={
+                    'event': 'ddos-amplification', 'client_ip': client,
+                    'method': method, 'path': path,
+                    'avg_ratio': round(amp_alert.get('avg_ratio', 0), 2),
+                    'status_code': response.status_code
+                })
+    except Exception:
+        log.debug('DDoS amplification check error', exc_info=True)
+    # ========== END AMPLIFICATION CHECK ==========
     
     # ========== v4.0: COOKIE SECURITY (response) ==========
     try:
@@ -1373,15 +1511,7 @@ async def security_headers_middleware(request: Request, call_next):
 
 @app.get('/health')
 def health():
-    ok = os.path.exists(MODEL_PATH)
-    ml_engine_status = ml_engine.get_engine().is_trained
-    return {
-        "status": "ok", 
-        "anomaly_detector_trained": ok, 
-        "ml_engine_trained": ml_engine_status,
-        "ml_mode": ML_MODE,
-        "rules_count": len(rules.list_rules())
-    }
+    return {"status": "ok"}
 
 @app.get('/metrics')
 def metrics():
