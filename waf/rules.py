@@ -676,39 +676,66 @@ if _rules_file and os.path.exists(_rules_file):
 
 # Simple allowlist (paths that should never be blocked)
 # Includes all IDTS application API endpoints to prevent false positives
-_DEFAULT_ALLOW = (
-    '/health,/metrics,/admin/compliance,/admin/ml-stats,/admin/rules,'
-    '/admin/enterprise-stats,/admin/virtual-patches,/admin/correlation,'
-    '/admin/adaptive-mode,/admin/retrain,/admin/retrain-ml,/admin/ml-predict,'
-    '/api/login,/api/auth/login,/api/auth/register,/api/search,/api/health,'
-    '/api/v1/auth/login,/api/dashboard/stats,/api/orders,/api/products,'
-    '/api/users,/api/status,/api/csrf-token,/api/auth,'
-    # ── IDTS BACK endpoints (context-path=/api) ──
-    '/api/chantiers,/api/clients,/api/factures,/api/fournisseurs,'
-    '/api/roles,/api/pointage,/api/pointages,/api/pointageChefChantierAndConducteur,'
-    '/api/tache,/api/taches,/api/salaire,/api/salaires,'
-    '/api/remboursement,/api/remboursements,/api/notification,/api/notifications,'
-    '/api/user-details,/api/fileFacture,/api/images,/api/uploadPhoto,'
-    '/api/paye,/api/payes,/api/chantUser,/api/chantierUsers,'
-    '/api/auth/login,/api/auth/register,/api/auth/change-password,'
-    '/api/auth/reset-password,/api/auth/validKey,'
-    '/api/users,/api/sendNotificationForUserNotPointedToday,'
-    '/api/notification/token,/api/notification/topic,'
-    # ── KAIROS BACK endpoints (context-path=/api) ──
-    '/auth/login,/auth/register,'
-    '/api/contact,'
-    '/api/basic_Material,/api/PrimaryMatrial,/api/PackagingAll,'
-    '/api/lot,/api/Reposit,/api/Adress_All,/api/factoryall,'
-    '/api/Prefactory,/api/prefactoryall,'
-    '/api/ProductAll,/api/QuarentineMP,/api/QuarentinePr,'
-    '/api/rejection,/api/hR,/api/gestionnaireprod,'
-    '/api/Customer,/api/Provider,/api/bcclient,/api/bcfournisseur,'
-    '/api/blclient,/api/blfournisseur,'
-    '/api/Invoice_Details,/api/paymentall,/api/cotation,'
-    '/api/taxation,/api/currency,/api/Transaction_All,'
-    '/unite,/hR,/gestionnaireprod,/invoice,'
-    '/roles,/users,/user-details,/contact'
-)
+# ── Paths communs à tous les domaines (WAF internal + health) ──
+_ALLOW_COMMON = [
+    '/health', '/metrics', '/admin/compliance', '/admin/ml-stats', '/admin/rules',
+    '/admin/enterprise-stats', '/admin/virtual-patches', '/admin/correlation',
+    '/admin/adaptive-mode', '/admin/retrain', '/admin/retrain-ml', '/admin/ml-predict',
+]
+
+# ── IDTS BACK (idts.back.dpc.com.tn) — context-path=/api ──
+_ALLOW_IDTS_BACK = [
+    '/api/auth/login', '/api/auth/register', '/api/auth/change-password',
+    '/api/auth/reset-password', '/api/auth/validKey',
+    '/api/chantiers', '/api/clients', '/api/factures', '/api/fournisseurs',
+    '/api/roles', '/api/pointage', '/api/pointages',
+    '/api/pointageChefChantierAndConducteur',
+    '/api/tache', '/api/taches', '/api/salaire', '/api/salaires',
+    '/api/remboursement', '/api/remboursements',
+    '/api/notification', '/api/notifications',
+    '/api/notification/token', '/api/notification/topic',
+    '/api/user-details', '/api/fileFacture', '/api/images', '/api/uploadPhoto',
+    '/api/paye', '/api/payes', '/api/chantUser', '/api/chantierUsers',
+    '/api/users', '/api/sendNotificationForUserNotPointedToday',
+]
+
+# ── IDTS FRONT (dev.idts.dpc.com.tn) — Angular SPA, pas d'API propre ──
+_ALLOW_IDTS_FRONT = [
+    # Pas d'endpoints API — tout va vers idts.back via le navigateur
+    # Les routes Angular sont gérées par _SAFE_PATH_PREFIXES/_SAFE_PATH_EXACT
+]
+
+# ── KAIROS BACK (dev.kairos.dpc.com.tn) — context-path=/api ──
+_ALLOW_KAIROS_BACK = [
+    '/auth/login', '/auth/register', '/api/contact',
+    '/api/basic_Material', '/api/PrimaryMatrial', '/api/PackagingAll',
+    '/api/lot', '/api/Reposit', '/api/Adress_All', '/api/factoryall',
+    '/api/Prefactory', '/api/prefactoryall',
+    '/api/ProductAll', '/api/QuarentineMP', '/api/QuarentinePr',
+    '/api/rejection', '/api/hR', '/api/gestionnaireprod',
+    '/api/Customer', '/api/Provider', '/api/bcclient', '/api/bcfournisseur',
+    '/api/blclient', '/api/blfournisseur',
+    '/api/Invoice_Details', '/api/paymentall', '/api/cotation',
+    '/api/taxation', '/api/currency', '/api/Transaction_All',
+    '/unite', '/hR', '/gestionnaireprod', '/invoice',
+    '/roles', '/users', '/user-details',
+]
+
+# ── KAIROS FRONT (front.kairos.dpc.com.tn) — Angular SPA, pas d'API propre ──
+_ALLOW_KAIROS_FRONT = [
+    # Pas d'endpoints API — tout va vers dev.kairos via le navigateur
+]
+
+# ── Table de routage host → liste d'endpoints autorisés ──
+_ALLOW_BY_HOST = {
+    'idts.back.dpc.com.tn':    _ALLOW_COMMON + _ALLOW_IDTS_BACK,
+    'dev.idts.dpc.com.tn':     _ALLOW_COMMON + _ALLOW_IDTS_FRONT,
+    'dev.kairos.dpc.com.tn':   _ALLOW_COMMON + _ALLOW_KAIROS_BACK,
+    'front.kairos.dpc.com.tn': _ALLOW_COMMON + _ALLOW_KAIROS_FRONT,
+}
+
+# ── Fallback global (env var ou default) pour rétro-compatibilité ──
+_DEFAULT_ALLOW = ','.join(_ALLOW_COMMON + _ALLOW_IDTS_BACK + _ALLOW_KAIROS_BACK)
 ALLOW_PATHS = os.environ.get('BEEWAF_ALLOW_PATHS', _DEFAULT_ALLOW).split(',')
 ALLOW_PATHS = [p.strip() for p in ALLOW_PATHS if p.strip()]
 
@@ -939,10 +966,17 @@ def check_regex_rules(path: str, body: str, headers: Dict[str, str]) -> Tuple[bo
                     logger.warning(f"DEBUG HEADER match - header: {header_line}, kind: {kind}, pattern: {pat.pattern}")
                     return True, f"header-{kind}"
     
-    # Check if path matches any allowlist pattern (exact or prefix match)
+    # ── Isolation par domaine : sélectionner la bonne liste d'endpoints ──
+    host_header = (headers.get('host') or headers.get('Host') or '').split(':')[0].lower().strip()
+    if host_header and host_header in _ALLOW_BY_HOST:
+        effective_allow = _ALLOW_BY_HOST[host_header]
+    else:
+        effective_allow = ALLOW_PATHS  # fallback global
+
+    # Check if path matches the domain-specific allowlist
     path_clean = (path or '').split('?')[0].rstrip('/')
     is_allowed = False
-    for allowed in ALLOW_PATHS:
+    for allowed in effective_allow:
         if path_clean == allowed or path_clean.startswith(allowed + '/'):
             is_allowed = True
             break
