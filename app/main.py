@@ -1167,12 +1167,27 @@ async def waf_middleware(request: Request, call_next):
                 check_value = _re_strip.sub(r'^https?://', '', header_value)
             blocked, reason = rules.check_regex_rules('', check_value, {})
             
-            # EXCEPTION: Referer headers naturally contain paths (/dashboard/, /admin/, etc.)
-            # IDOR/access-control rules matching on referer are almost always false positives.
-            # Real attacks (XSS, SQLi, RCE) injected into the referer are still caught above.
-            _REFERER_FP_CATEGORIES = {'regex-idor_access', 'regex-race_timing'}
+            # EXCEPTION: Referer headers naturally contain legitimate app paths.
+            # The browser sends Referer automatically on navigation and logout.
+            # We allow known benign reasons OR known frontend domain paths.
+            _REFERER_FP_CATEGORIES = {
+                'regex-idor_access', 'regex-race_timing',
+                'regex-sensitive_data', 'regex-cve_2025_v5',
+            }
             if blocked and header_name == 'referer' and reason in _REFERER_FP_CATEGORIES:
-                blocked = False
+                # Only bypass if the referer comes from a known frontend domain
+                import re as _re_ref
+                _known_fe_domains = (
+                    'front.kairos.dpc.com.tn',
+                    'dev.idts.dpc.com.tn',
+                    'dev.kairos.dpc.com.tn',
+                    'idts.back.dpc.com.tn',
+                    'argocd.dpc.com.tn',
+                    'kibana.dpc.com.tn',
+                )
+                referer_host = _re_ref.sub(r'^https?://', '', check_value).split('/')[0]
+                if any(referer_host == d for d in _known_fe_domains):
+                    blocked = False
 
             # v7.0: Cookie headers contain tracking IDs (GA1.2.xxx), session tokens,
             # CSRF tokens, etc. that trigger many regex categories falsely.
