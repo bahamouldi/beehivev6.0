@@ -1169,13 +1169,8 @@ async def waf_middleware(request: Request, call_next):
             
             # EXCEPTION: Referer headers naturally contain legitimate app paths.
             # The browser sends Referer automatically on navigation and logout.
-            # We allow known benign reasons OR known frontend domain paths.
-            _REFERER_FP_CATEGORIES = {
-                'regex-idor_access', 'regex-race_timing',
-                'regex-sensitive_data', 'regex-cve_2025_v5',
-            }
-            if blocked and header_name == 'referer' and reason in _REFERER_FP_CATEGORIES:
-                # Only bypass if the referer comes from a known frontend domain
+            # Words like 'admin', 'client', 'production' in path trigger mega-rules falsely.
+            if blocked and header_name == 'referer':
                 import re as _re_ref
                 _known_fe_domains = (
                     'front.kairos.dpc.com.tn',
@@ -1184,10 +1179,18 @@ async def waf_middleware(request: Request, call_next):
                     'idts.back.dpc.com.tn',
                     'argocd.dpc.com.tn',
                     'kibana.dpc.com.tn',
+                    'localhost'
                 )
-                referer_host = _re_ref.sub(r'^https?://', '', check_value).split('/')[0]
-                if any(referer_host == d for d in _known_fe_domains):
-                    blocked = False
+                # Extract host safely ignoring port and scheme
+                clean_ref = _re_ref.sub(r'^https?://', '', check_value)
+                referer_host = clean_ref.split('/')[0].split(':')[0]
+                
+                if referer_host in _known_fe_domains:
+                    # General bypass for our domains, but keeping a strict safety net 
+                    # in case someone injects a real exploit payload into the referer.
+                    attack_chars = ['<', '>', '$(', '${', '`', ';', '|', '%00']
+                    if not any(c in check_value for c in attack_chars):
+                        blocked = False
 
             # v7.0: Cookie headers contain tracking IDs (GA1.2.xxx), session tokens,
             # CSRF tokens, etc. that trigger many regex categories falsely.
