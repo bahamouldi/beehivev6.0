@@ -60,7 +60,7 @@ class ZeroDayDetector:
             re.compile(rb'(\xcc{3,})'),  # INT3 sled
             re.compile(rb'\x31\xc0.*\x50.*\x89\xe3.*\xcd\x80'),  # Linux execve shellcode
             re.compile(rb'\x48\x31\xc0.*\x48\x89.*\x0f\x05'),  # x64 syscall
-            re.compile(rb'\xeb[\x00-\x7f]\x5[8-9a-f]'),  # JMP-CALL-POP pattern
+            re.compile(rb'\xeb[\x00-\x7f][\x58-\x5f]'),  # JMP-CALL-POP pattern
             re.compile(rb'(?:\\x[0-9a-f]{2}){20,}'),  # Hex-encoded shellcode in text
         ]
 

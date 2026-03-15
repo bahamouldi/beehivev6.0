@@ -10,16 +10,16 @@ SQLI_PATTERNS = [
     r"\b(?:update)\b\s+(?:\w+)\s+set\b",
     r"\b(?:delete)\b\s+from\b",
     r"\b(?:drop)\b\s+(?:table|database|column|index|view|procedure|function|schema|user|trigger|event)\b",
-    r"--",
-    r"/\*.*\*/",
+    r"(?:'\s*--|\)\s*--|\d\s*--|;\s*--)",  # FIXED: SQL comment with context (not bare --)
+    r"/\*[!+].*\*/",  # FIXED: MySQL hint comments /*!...*/ and /*+...*/ only
     r"\bor\b\s+\d+\s*=",
     r"'.*or.*'.*'.*=.*'",  # Détecte 1' OR '1'='1
     r"\bsleep\s*\(",  # Time-based blind SLEEP(5)
     r"\bbenchmark\s*\(",  # Time-based blind BENCHMARK
     r"\bwaitfor\b.*\bdelay\b",  # MSSQL WAITFOR DELAY
     r"\bexec\s*\(|\bexecute\s+(?:immediate|as|sp_|xp_)",  # EXEC/EXECUTE with SQL context
-    r"\|\|",  # SQL concatenation operator ||
-    r"0x[0-9a-f]{6,}",  # Hex encoding (0x73656c656374)
+    r"'\s*\|\||\|\|\s*'",  # FIXED: SQL concat || with quote context only
+    r"0x[0-9a-f]{8,}",  # FIXED: Hex (min 8 chars to avoid CSS color 0xffffff FP)
     r"\bascii\s*\(",  # ASCII-based blind SQLi
     r"\bsubstring\s*\(",  # SUBSTRING extraction
     r"[\u1d00-\u1d7f]{4,}",  # Unicode small caps block (ᴜɴɪᴏɴ)
@@ -36,6 +36,24 @@ SQLI_PATTERNS = [
     r"\bpg_catalog\b",  # PostgreSQL pg_catalog
     r"\bxp_cmdshell\b",  # SQL Server xp_cmdshell
     r"\bxp_regread\b",  # SQL Server xp_regread
+    # === PostgreSQL RCE patterns (NEW) ===
+    r"\bcopy\b.*\bto\b.*\bprogram\b",  # COPY ... TO PROGRAM 'cmd'
+    r"\blo_import\s*\(",  # lo_import() large object RCE
+    r"\blo_export\s*\(",  # lo_export()
+    r"\bpg_read_file\s*\(",  # pg_read_file() file read
+    r"\bpg_ls_dir\s*\(",  # pg_ls_dir() directory listing
+    r"\bpg_stat_file\s*\(",  # pg_stat_file()
+    r"\bquery_to_xml\s*\(",  # query_to_xml() data exfil
+    # === MSSQL RCE patterns (NEW) ===
+    r"\bsp_oacreate\b",  # sp_OACreate COM object
+    r"\bsp_oamethod\b",  # sp_OAMethod
+    r"\bxp_dirtree\b",  # xp_dirtree directory listing
+    r"\bxp_fileexist\b",  # xp_fileexist file check
+    r"\bxp_subdirs\b",  # xp_subdirs
+    r"\bxp_availablemedia\b",  # xp_availablemedia
+    # === Oracle RCE patterns (NEW) ===
+    r"\butl_file\.\w+",  # UTL_FILE.PUT/GET/FOPEN/FCLOSE
+    r"\bdbms_utility\.exec_ddl\b",  # DBMS_UTILITY.EXEC_DDL
     # === v7.1 Bypass fix patterns ===
     r"\)\s*(?:AND|OR)\s*\(",                          # Parenthesized blind: 1)AND(1)=(1
     r"\d+(?:[eE]\d*|\.\d*)\s*(?:UNION|SELECT)\b",     # Scientific notation: 1e0UNION SELECT
@@ -48,7 +66,7 @@ SQLI_PATTERNS = [
     r"\bRLIKE\b",                                         # RLIKE regex match (MySQL-specific)
     r"\bREGEXP\b\s+\(?",                                  # REGEXP with optional subquery
     r"\bGROUP\s+BY\b.*?\bHAVING\b",                       # GROUP BY...HAVING
-    r"\bHAVING\b\s+\w+\s*[><=!]",                         # HAVING col>0 (with comparison)
+    r"\bHAVING\b\s+\w+\s*[><!=]",                         # HAVING col>0 (with comparison)
     r"\bELT\s*\(",                                        # ELT() MySQL function
     r"\bMAKE_SET\s*\(",                                   # MAKE_SET() MySQL function
 ]
@@ -63,7 +81,8 @@ XSS_PATTERNS = [
     r"<iframe[^>]*src",  # <iframe src=...>
     r"<object[^>]*data",  # <object data=...>
     r"<embed[^>]*src",  # <embed src=...>
-    r"on\w+\s*=",  # All event handlers (onclick, onerror, etc.)
+    # FIXED: Explicit event handler whitelist (avoids FP on onion=, once=, ongoing=)
+    r"\bon(?:error|load|click|focus|blur|mouseover|mousedown|mouseup|mousemove|mouseout|keydown|keyup|keypress|change|submit|reset|select|abort|resize|scroll|unload|beforeunload|hashchange|popstate|storage|message|copy|cut|paste|drag|dragend|dragenter|dragleave|dragover|dragstart|drop|wheel|contextmenu|pointerdown|pointerup|pointermove|pointerover|pointerout|toggle|input|invalid|animationend|animationstart|transitionend|touchstart|touchend|touchmove)\s*=",
     r"\[\]\[",  # JSFuck obfuscation patterns
     r"\(\!\[\]\+\[\]\)",  # JSFuck patterns (![]+[])
     r"\\x[0-9a-f]{2}",  # Hex escape sequences
@@ -83,20 +102,32 @@ XSS_PATTERNS = [
     r"fromCharCode",  # String.fromCharCode()
     r"atob\s*\(",  # atob() base64 decode
     r"btoa\s*\(",  # btoa() base64 encode
+    # === DOM Clobbering XSS (NEW) ===
+    r"<form\s+[^>]*id\s*=\s*['\"]?(?:document|location|window|self|top|parent|frames)\b",
+    r"<a\s+[^>]*id\s*=\s*['\"]?(?:document|location|URL|origin)\b",
+    r"<output\s+[^>]*id\s*=\s*['\"]?(?:document|location|URL)\b",
+    r"<embed\s+[^>]*name\s*=\s*['\"]?(?:document|location|window)\b",
+    # === Import Maps XSS (NEW) ===
+    r"<script\s+type\s*=\s*['\"]?importmap",
+    r"import\s*\(['\"]data:",
+    r"import\s*\(['\"]blob:",
+    # === Service Worker XSS (NEW) ===
+    r"navigator\.serviceWorker\.register\s*\(",
+    r"importScripts\s*\(",
 ]
 
 # ==================== COMMAND INJECTION PATTERNS ====================
 CMDI_PATTERNS = [
     r"[;|]\s*(whoami|id|ls|cat|wget|curl|nc|bash|sh|cmd|uname|pwd)\b|&\s+(whoami|id|ls|cat|wget|curl|nc|bash|sh|cmd|uname|pwd)\b",
-    r"`.*`",  # Backticks: `whoami`
-    r"\$\(.*\)",  # Command substitution: $(whoami)
+    r"`[^`]{1,200}`",  # FIXED: Backticks with length limit (avoids FP on markdown)
+    r"\$\([^)]{1,200}\)",  # FIXED: Command substitution with length limit (avoids jQuery FP)
     r"%0a|%0d",  # Newline injection
     r"\|\s*(grep|awk|sed|sort|uniq|head|tail|cut)",  # Pipe with Unix commands
-    r"\$IFS",  # FIXED: IFS variable manipulation
-    r"\$\d+",  # FIXED: Positional parameters ($1, $9)
-    r"\$PATH|\$HOME|\$USER",  # FIXED: Environment variables
-    r"\\[a-z]",  # FIXED: Backslash escaping (c\at)
-    r"\{[a-z]+,[^}]+\}",  # FIXED: Brace expansion {cat,/etc/passwd}
+    r"\$IFS",  # IFS variable manipulation
+    r"\$\d+",  # Positional parameters ($1, $9)
+    r"\$PATH|\$HOME|\$USER",  # Environment variables
+    r"\\[a-z]",  # Backslash escaping (c\at)
+    r"\{[a-z]+,[^}]+\}",  # Brace expansion {cat,/etc/passwd}
     # Shell interpreters and dangerous commands
     r"/bin/(ba)?sh\b",  # /bin/sh, /bin/bash
     r"/usr/bin/(ba)?sh\b",  # /usr/bin/sh, /usr/bin/bash
@@ -109,21 +140,28 @@ CMDI_PATTERNS = [
     r"\bwget\s+https?://",  # wget http://
     r"\bcurl\s+https?://",  # curl http://
     r"\bfetch\s+https?://",  # fetch http:// (BSD)
-    # Additional command patterns
-    r"\bping\b.*-[cn]",  # ping -c / ping -n
-    r"\bnslookup\b",  # nslookup command
-    r"\bdig\b",  # dig command
-    r"\btraceroute\b",  # traceroute
-    r"\bnetcat\b",  # netcat
-    r"\btelnet\b",  # telnet
-    r"\bftp\b\s",  # ftp command
-    r"\bssh\b\s",  # ssh command
-    r"\bchmod\b",  # chmod
-    r"\bchown\b",  # chown
+    # FIXED: Commands with metachar context (avoid FP on plain English words)
+    r"(?:[;|&]|&&|\|\|)\s*(?:ping|nslookup|dig|traceroute|netcat|telnet)\b",
+    r"(?:[;|&]|&&|\|\|)\s*(?:ftp|ssh|chmod|chown|mkdir|touch)\b",
     r"\brm\b\s+-[rf]",  # rm -rf
-    r"\bmkdir\b",  # mkdir
-    r"\btouch\b",  # touch
     r"\bkill\b\s+-\d",  # kill -9
+    # === Windows Command Injection (NEW) ===
+    r"\bcmd\s*/[cCkK]\s",  # cmd /c whoami
+    r"\bcmd\.exe\s*/[cCkK]\s",  # cmd.exe /c
+    r"\bpowershell\s+-(?:enc|e|encodedcommand|nop|sta|ep\s+bypass|exec\s+bypass)\b",  # PowerShell
+    r"\bpowershell\.exe\s+-(?:enc|e|w\s+hidden|nop)\b",  # powershell.exe
+    r"\bcertutil\s+-(?:urlcache|decode|encode)\b",  # certutil download/decode
+    r"\bbitsadmin\s+/transfer\b",  # bitsadmin download
+    r"\bmshta\s+(?:http|javascript|vbscript):",  # mshta execution
+    r"\bregsvr32\s+/s\s+/n\b",  # regsvr32 bypass
+    r"\brundll32\s+",  # rundll32 execution
+    r"\bwmic\s+(?:process|os|service|useraccount)\b",  # WMIC
+    r"\bcscript\s+",  # cscript.exe
+    r"\bwscript\s+",  # wscript.exe
+    r"\bschtasks\s+/create\b",  # Scheduled tasks
+    r"\bsc\s+(?:create|config|start|stop|delete)\b",  # Service control
+    r"\bnet\s+(?:user|localgroup|group|share|use)\b",  # Net commands
+    r"\breg\s+(?:add|delete|query|save|export)\b",  # Registry manipulation
 ]
 
 # ==================== PATH TRAVERSAL / LFI PATTERNS ====================
@@ -134,16 +172,23 @@ PATH_TRAVERSAL_PATTERNS = [
     r"\.\.\.\./+|\.\.\.\.\\+",  # Double slash evasion: ....//
     r"/etc/passwd|/etc/shadow|/etc/hosts",  # Unix sensitive files
     r"c:\\windows\\|c:/windows/",  # Windows paths
-    r"\\\\\\\\[0-9.]+",  # FIXED: UNC paths (\\127.0.0.1)
-    r"\\\\[a-z0-9.-]+\\c\$",  # FIXED: Windows admin shares (\\host\c$)
-    # NEW: UTF-8 overlong encoding bypass prevention
+    r"\\\\\\\\[0-9.]+",  # UNC paths (\\127.0.0.1)
+    r"\\\\[a-z0-9.-]+\\c\$",  # Windows admin shares (\\host\c$)
+    # UTF-8 overlong encoding bypass prevention
     r"%c0%ae|%c0%af",  # UTF-8 overlong encoding for . and /
     r"%c1%1c|%c1%9c",  # UTF-8 overlong encoding variants
     r"%e0%80%ae",  # 3-byte overlong encoding for .
     r"%f0%80%80%ae",  # 4-byte overlong encoding for .
     r"%252e|%252f",  # Double URL encoding
-    r"\.\.;/",  # Tomcat path traversal bypass
+    r"\.\.\.;/",  # Tomcat path traversal bypass
     r"/\.\./",  # Normalized traversal
+    # === Windows ADS & IIS bypass (NEW) ===
+    r"::\$DATA",  # NTFS Alternate Data Stream
+    r"::\$INDEX_ALLOCATION",  # NTFS directory ADS
+    r"\.\.\.;\./",  # Tomcat path normalization variant
+    r"/%5c\.\.%5c",  # IIS backslash traversal
+    r"/%252e%252e/",  # IIS double-encoded traversal
+    r"/\.%00\./",  # Null byte directory bypass
 ]
 # ==================== SSRF PATTERNS ====================
 SSRF_PATTERNS = [
@@ -186,10 +231,61 @@ SSRF_PATTERNS = [
 
 # ==================== XXE PATTERNS ====================
 XXE_PATTERNS = [
+    # === Base XXE patterns ===
     r"<!ENTITY",  # XML Entity declaration
     r"<!DOCTYPE\s+\w",  # DOCTYPE declaration (any DOCTYPE with name)
-    r"SYSTEM\s+[\"']file://",  # External entity: file://
+    r"SYSTEM\s+[\"'](?:file|http|https|ftp|gopher|expect|jar|netdoc|php|data|dict)://",  # External entity with protocol
     r"PUBLIC\s+[\"']",  # PUBLIC external entity
+    # === Parameter Entities (Blind XXE OOB) ===
+    r"<!ENTITY\s+%\s+\w+",  # Parameter entity declaration: <!ENTITY % xxe
+    r"%\w+;",  # Parameter entity reference: %xxe;
+    r"<!ENTITY\s+%\s+\w+\s+SYSTEM",  # External parameter entity
+    r"<!ENTITY\s+%\s+\w+\s+\"<!ENTITY",  # Nested entity declaration for OOB
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']https?://",  # External entity HTTP
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']ftp://",  # External entity FTP
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']gopher://",  # External entity Gopher
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']expect://",  # External entity Expect (PHP)
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']jar:",  # External entity JAR
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']netdoc://",  # External entity netdoc
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']php://",  # External entity php://
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']data://",  # External entity data://
+    # === XInclude Attacks ===
+    r"<xi:include\b",  # XInclude element
+    r"xmlns:xi\s*=\s*[\"']http://www\.w3\.org/2001/XInclude",  # XInclude namespace
+    r"<xi:include\s+[^>]*href\s*=\s*[\"'](?:file|http|ftp)://",  # XInclude with external href
+    r"<xi:include\s+[^>]*parse\s*=\s*[\"']text",  # XInclude text parsing
+    # === XSLT Injection ===
+    r"<xsl:value-of\s+select\s*=\s*[\"']document\(",  # XSLT document() function
+    r"<xsl:include\s+href\s*=",  # XSLT include
+    r"<xsl:import\s+href\s*=",  # XSLT import
+    r"<xsl:(?:stylesheet|transform)\b",  # XSLT root elements
+    r"<xsl:(?:variable|param|template|output|copy-of)\b",  # XSLT directives
+    r"xmlns:xsl\s*=\s*[\"']http://www\.w3\.org/1999/XSL/Transform",  # XSLT namespace
+    # === SVG/XML-based XXE ===
+    r"<!DOCTYPE\s+svg\b",  # SVG DOCTYPE
+    r"<!DOCTYPE\s+(?:svg|math|html)\s[^>]*\[",  # DOCTYPE with internal subset
+    r"<!DOCTYPE\s+\w+\s*\[",  # Any DOCTYPE with internal subset (DTD)
+    # === XML Bomb / Billion Laughs ===
+    r"<!ENTITY\s+\w+\s+\"(?:&\w+;){2,}",  # Entity referencing other entities (XML bomb)
+    r"<!ENTITY\s+\w+\s+\"(?:.*){100,}",  # Very long entity value
+    # === Encoded XXE variants ===
+    r"%3C!ENTITY",  # URL-encoded <!ENTITY
+    r"%3C!DOCTYPE",  # URL-encoded <!DOCTYPE
+    r"&#x3c;!ENTITY",  # HTML entity encoded <!ENTITY
+    r"&#x3c;!DOCTYPE",  # HTML entity encoded <!DOCTYPE
+    r"&#60;!ENTITY",  # Decimal HTML entity
+    r"&#60;!DOCTYPE",  # Decimal HTML entity
+    # === Advanced XXE bypass patterns ===
+    r"<!\[CDATA\[.*<!ENTITY",  # CDATA-wrapped entity
+    r"<!DOCTYPE\s+\w+\s+PUBLIC\s+[\"'][^\"\']*[\"']\s+[\"'](?:http|ftp|file)://",  # PUBLIC with external DTD
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']/etc/",  # Direct file access Unix
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']c:\\",  # Direct file access Windows
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']\\\\\\\\\w+",  # UNC path entity
+    r"<!ENTITY\s+\w+\s+SYSTEM\s+[\"']\s*\"\s*>",  # Empty SYSTEM entity (probe)
+    # === SOAP/XML-RPC XXE ===
+    r"<soap:(?:Envelope|Body|Header).*<!ENTITY",  # SOAP with XXE
+    r"<methodCall>.*<!ENTITY",  # XML-RPC with XXE
+    r"<methodCall>.*<!DOCTYPE",  # XML-RPC with DOCTYPE
 ]
 
 # ==================== LDAP INJECTION PATTERNS ====================
@@ -290,15 +386,17 @@ PHP_FILTER_PATTERNS = [
 
 # ==================== SERVER-SIDE TEMPLATE INJECTION (SSTI) PATTERNS ====================
 SSTI_PATTERNS = [
-    r"\{\{.*\*.*\}\}",  # {{7*7}}
-    r"\$\{.*\*.*\}",  # ${7*7}
-    r"\{\%.*\%\}",  # {%...%}
-    r"<\%.*\%>",  # <%...%>
-    r"\{\{.*config.*\}\}",  # {{config}}
-    r"\{\{.*self.*\}\}",  # {{self}}
-    r"#\{.*\}",  # Ruby #{...} interpolation
-    r"\{\{.*\}\}",  # Generic Jinja2/Twig {{...}}
-    r"\$\{[^}]+\}",  # Generic ${...} expressions
+    r"\{\{.*\*.*\}\}",  # {{7*7}} — arithmetic probe
+    r"\$\{.*\*.*\}",  # ${7*7} — arithmetic probe
+    r"\{\%.*\%\}",  # {%...%} — Jinja2/Twig block tags
+    r"<\%.*\%>",  # <%...%> — ERB/JSP/ASP
+    r"\{\{.*config.*\}\}",  # {{config}} — Jinja2 config access
+    r"\{\{.*self.*\}\}",  # {{self}} — Jinja2 self access
+    r"#\{.*(?:system|exec|`|IO\.popen|open\s*\|).*\}",  # FIXED: Ruby #{} only with dangerous calls
+    # FIXED: Generic {{...}} only with exploit indicators (not every template variable)
+    r"\{\{.*(?:__class__|__mro__|__subclasses__|__globals__|__builtins__|__import__|lipsum|cycler|joiner|namespace|url_for|get_flashed|request\.|config\.|popen|subprocess|os\.).*\}\}",
+    # FIXED: ${...} only with dangerous Java/Spring EL expressions
+    r"\$\{.*(?:Runtime|exec|getClass|ProcessBuilder|Thread|forName|getRuntime|System|classLoader|ScriptEngine|java\.|javax\.).*\}",
 ]
 
 # ==================== JSP CODE INJECTION PATTERNS ====================
@@ -443,217 +541,115 @@ for p in HEX_BYPASS_PATTERNS:
 for p in BRUTE_PATTERNS:
     _default_compiled.append((re.compile(p, re.IGNORECASE), 'brute'))
 
+# === DEDUPLICATION ENGINE ===
+# Normalize category labels so SIEM logs are consistent across all rule files
+_CATEGORY_NORMALIZE = {
+    'sqli_ext': 'sqli', 'sqli_adv_v5': 'sqli',
+    'xss_ext': 'xss', 'xss_adv_v5': 'xss',
+    'crlf': 'crlf-injection', 'open_redirect': 'open-redirect',
+    'request_smuggling': 'request-smuggling', 'cache_poisoning': 'cache-poisoning',
+    'websocket': 'websocket-injection', 'cors_bypass': 'cors-bypass',
+    'el_injection': 'el-injection', 'rce': 'rce',
+    'info_disclosure': 'info-disclosure', 'auth_bypass': 'auth-bypass',
+    'scanner_probe': 'scanner-probe', 'encoding_evasion': 'encoding-evasion',
+    'waf_bypass': 'waf-bypass', 'log_injection': 'log-injection',
+    'email_injection': 'email-injection', 'xpath': 'xpath-injection',
+    'csv_injection': 'csv-injection', 'wordpress': 'wordpress',
+    'php_ext': 'php-injection', 'java_spring': 'java-spring',
+    'dotnet': 'dotnet-injection', 'nodejs': 'nodejs-injection',
+    'ruby_rails': 'ruby-rails', 'cve': 'cve',
+    'api_security_adv': 'api-security', 'cloud_attacks': 'cloud-attacks',
+    'container_k8s': 'container-k8s', 'oauth_saml': 'oauth-saml',
+    'file_upload_adv': 'file-upload', 'http2_http3': 'http2-http3',
+    'deserialization_adv': 'deserialization', 'ssrf_adv': 'ssrf',
+    'race_condition': 'race-condition', 'business_logic': 'business-logic',
+    'drupal': 'drupal', 'joomla': 'joomla', 'cve_2024_2025': 'cve',
+    'sqli_adv_v5': 'sqli', 'cmd_injection_v5': 'cmdi',
+    'path_traversal_v5': 'path-traversal', 'ssrf_v5': 'ssrf',
+    'auth_session_v5': 'auth-bypass', 'ssti_v5': 'ssti',
+    'xml_xxe_v5': 'xxe', 'webshell_v5': 'webshell',
+    'cryptomining_v5': 'cryptomining', 'api_abuse_v5': 'api-security',
+    'infrastructure_v5': 'infrastructure', 'mobile_iot_v5': 'mobile-iot',
+    'business_logic_v5': 'business-logic', 'crypto_attacks_v5': 'crypto-attacks',
+    'wordpress_v5': 'wordpress', 'cache_desync_v5': 'cache-desync',
+    'cve_2025_v5': 'cve', 'ai_llm_v5': 'ai-llm',
+    'supply_chain_v5': 'supply-chain', 'protocol_v5': 'protocol-attacks',
+    'evasion_v5': 'evasion', 'serverless_cloud_v5': 'serverless-cloud',
+    'log_evasion_v5': 'log-evasion', 'compliance_v5': 'compliance',
+    'deser_ext_v5': 'deserialization', 'framework_v5': 'framework-attacks',
+    'data_exfil_v5': 'data-exfil', 'emerging_v5': 'emerging-threats',
+    'scanner_detect_v5': 'scanner-probe', 'cms_ext_v5': 'cms-attacks',
+}
+
+def _normalize_category(cat: str) -> str:
+    """Normalize category label for consistent SIEM logging."""
+    return _CATEGORY_NORMALIZE.get(cat, cat)
+
+# Track seen regex strings to deduplicate across rule files
+_seen_patterns = set()
+_dedup_skipped = 0
+
+def _add_pattern_dedup(regex_str: str, category: str) -> bool:
+    """Add pattern if not already seen (deduplication). Returns True if added."""
+    global _dedup_skipped
+    # Strip (?i) prefix for dedup comparison since we compile with re.IGNORECASE
+    clean = regex_str.strip()
+    if clean.startswith('(?i)'):
+        clean = clean[4:]
+    if clean in _seen_patterns:
+        _dedup_skipped += 1
+        return False
+    _seen_patterns.add(clean)
+    norm_cat = _normalize_category(category)
+    try:
+        _default_compiled.append((re.compile(regex_str, re.IGNORECASE), norm_cat))
+        return True
+    except re.error:
+        return False
+
+# Register base patterns in dedup tracker
+for pat, kind in _default_compiled:
+    clean = pat.pattern.strip()
+    if clean.startswith('(?i)'):
+        clean = clean[4:]
+    _seen_patterns.add(clean)
+
 # === Merge Extended Rules (1200+ additional patterns) ===
 try:
     from waf.rules_extended import get_all_extended_patterns, count_extended_patterns
-    _ext_count = 0
-    for regex_str, category in get_all_extended_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _ext_count += 1
-        except re.error:
-            pass  # Skip invalid regex
-    print(f"[BeeWAF] Loaded {_ext_count} extended rules ({count_extended_patterns()} defined)")
+    _ext_count = sum(1 for r, c in get_all_extended_patterns() if _add_pattern_dedup(r, c))
+    print(f"[BeeWAF] Loaded {_ext_count} extended rules ({count_extended_patterns()} defined, {_dedup_skipped} deduped)")
 except ImportError:
     print("[BeeWAF] Extended rules not found, using base rules only")
 
 # === Merge Advanced v4.0 Rules (650+ additional patterns) ===
 try:
     from waf.rules_advanced import get_all_advanced_patterns, count_advanced_patterns
-    _adv_count = 0
-    for regex_str, category in get_all_advanced_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _adv_count += 1
-        except re.error:
-            pass  # Skip invalid regex
-    print(f"[BeeWAF] Loaded {_adv_count} advanced v4.0 rules ({count_advanced_patterns()} defined)")
+    _adv_count = sum(1 for r, c in get_all_advanced_patterns() if _add_pattern_dedup(r, c))
+    print(f"[BeeWAF] Loaded {_adv_count} advanced v4.0 rules ({count_advanced_patterns()} defined, {_dedup_skipped} total deduped)")
 except ImportError:
     print("[BeeWAF] Advanced v4.0 rules not found, using base + extended rules only")
 
 # === Merge v5.0 Rules (1200+ additional patterns) ===
 try:
     from waf.rules_v5 import get_all_v5_patterns, count_v5_patterns
-    _v5_count = 0
-    for regex_str, category in get_all_v5_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _v5_count += 1
-        except re.error:
-            pass  # Skip invalid regex
-    print(f"[BeeWAF] Loaded {_v5_count} v5.0 rules ({count_v5_patterns()} defined)")
+    _v5_count = sum(1 for r, c in get_all_v5_patterns() if _add_pattern_dedup(r, c))
+    print(f"[BeeWAF] Loaded {_v5_count} v5.0 rules ({count_v5_patterns()} defined, {_dedup_skipped} total deduped)")
 except ImportError:
     print("[BeeWAF] v5.0 rules not found, using base + extended + advanced rules only")
 
-# === Merge Mega Rules Database Part 1 (~1900 patterns) ===
-try:
-    from waf.rules_mega_1 import get_all_mega1_patterns, count_mega1_patterns
-    _m1_count = 0
-    for regex_str, category in get_all_mega1_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m1_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m1_count} mega-1 rules ({count_mega1_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 1 not found, skipping")
+# === Merge Mega Rules Database Parts 1-12 ===
+for _mega_idx in range(1, 13):
+    try:
+        _mod = __import__(f'waf.rules_mega_{_mega_idx}', fromlist=[f'get_all_mega{_mega_idx}_patterns', f'count_mega{_mega_idx}_patterns'])
+        _get_fn = getattr(_mod, f'get_all_mega{_mega_idx}_patterns')
+        _cnt_fn = getattr(_mod, f'count_mega{_mega_idx}_patterns')
+        _m_count = sum(1 for r, c in _get_fn() if _add_pattern_dedup(r, c))
+        print(f"[BeeWAF] Loaded {_m_count} mega-{_mega_idx} rules ({_cnt_fn()} defined)")
+    except (ImportError, AttributeError):
+        print(f"[BeeWAF] Mega rules part {_mega_idx} not found, skipping")
 
-# === Merge Mega Rules Database Part 2 (~1160 patterns) ===
-try:
-    from waf.rules_mega_2 import get_all_mega2_patterns, count_mega2_patterns
-    _m2_count = 0
-    for regex_str, category in get_all_mega2_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m2_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m2_count} mega-2 rules ({count_mega2_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 2 not found, skipping")
-
-# === Merge Mega Rules Database Part 3 (~1080 patterns) ===
-try:
-    from waf.rules_mega_3 import get_all_mega3_patterns, count_mega3_patterns
-    _m3_count = 0
-    for regex_str, category in get_all_mega3_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m3_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m3_count} mega-3 rules ({count_mega3_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 3 not found, skipping")
-
-# === Merge Mega Rules Database Part 4 (~1050 patterns) ===
-try:
-    from waf.rules_mega_4 import get_all_mega4_patterns, count_mega4_patterns
-    _m4_count = 0
-    for regex_str, category in get_all_mega4_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m4_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m4_count} mega-4 rules ({count_mega4_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 4 not found, skipping")
-
-# --- Mega Rules Part 5 ---
-try:
-    from waf.rules_mega_5 import get_all_mega5_patterns, count_mega5_patterns
-    _m5_count = 0
-    for regex_str, category in get_all_mega5_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m5_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m5_count} mega-5 rules ({count_mega5_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 5 not found, skipping")
-
-# --- Mega Rules Part 6 ---
-try:
-    from waf.rules_mega_6 import get_all_mega6_patterns, count_mega6_patterns
-    _m6_count = 0
-    for regex_str, category in get_all_mega6_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m6_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m6_count} mega-6 rules ({count_mega6_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 6 not found, skipping")
-
-# --- Mega Rules Part 7 ---
-try:
-    from waf.rules_mega_7 import get_all_mega7_patterns, count_mega7_patterns
-    _m7_count = 0
-    for regex_str, category in get_all_mega7_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m7_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m7_count} mega-7 rules ({count_mega7_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 7 not found, skipping")
-
-# --- Mega Rules Part 8 ---
-try:
-    from waf.rules_mega_8 import get_all_mega8_patterns, count_mega8_patterns
-    _m8_count = 0
-    for regex_str, category in get_all_mega8_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m8_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m8_count} mega-8 rules ({count_mega8_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 8 not found, skipping")
-
-# --- Mega Rules Part 9 ---
-try:
-    from waf.rules_mega_9 import get_all_mega9_patterns, count_mega9_patterns
-    _m9_count = 0
-    for regex_str, category in get_all_mega9_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m9_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m9_count} mega-9 rules ({count_mega9_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 9 not found, skipping")
-
-# --- Mega Rules Part 10 ---
-try:
-    from waf.rules_mega_10 import get_all_mega10_patterns, count_mega10_patterns
-    _m10_count = 0
-    for regex_str, category in get_all_mega10_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m10_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m10_count} mega-10 rules ({count_mega10_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 10 not found, skipping")
-
-# --- Mega Rules Part 11 ---
-try:
-    from waf.rules_mega_11 import get_all_mega11_patterns, count_mega11_patterns
-    _m11_count = 0
-    for regex_str, category in get_all_mega11_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m11_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m11_count} mega-11 rules ({count_mega11_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 11 not found, skipping")
-
-# --- Mega Rules Part 12 ---
-try:
-    from waf.rules_mega_12 import get_all_mega12_patterns, count_mega12_patterns
-    _m12_count = 0
-    for regex_str, category in get_all_mega12_patterns():
-        try:
-            _default_compiled.append((re.compile(regex_str, re.IGNORECASE), category.lower()))
-            _m12_count += 1
-        except re.error:
-            pass
-    print(f"[BeeWAF] Loaded {_m12_count} mega-12 rules ({count_mega12_patterns()} defined)")
-except ImportError:
-    print("[BeeWAF] Mega rules part 12 not found, skipping")
-
-print(f"[BeeWAF] *** TOTAL COMPILED RULES: {len(_default_compiled)} ***")
+print(f"[BeeWAF] *** TOTAL COMPILED RULES: {len(_default_compiled)} (deduplicated {_dedup_skipped} redundant patterns) ***")
 
 # Allow an environment-specified additional rules file (one regex per line prefixed by kind: e.g. sqli:regex)
 COMPILED_RULES = list(_default_compiled)

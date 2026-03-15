@@ -18,7 +18,7 @@ import re
 import json
 import math
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from threading import Lock
 from typing import Optional
 

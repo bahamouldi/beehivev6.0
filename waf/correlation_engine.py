@@ -203,10 +203,38 @@ class AttackEvent:
         self.kill_chain_phase = self._determine_phase()
 
     def _normalize_event_type(self, event_type: str) -> str:
-        # Remove regex- prefix for correlation
-        if event_type.startswith('regex-'):
-            return event_type[6:]
-        return event_type
+        event_type = (event_type or '').strip().lower()
+
+        # Remove common wrapper prefixes added by the middleware.
+        prefixes = (
+            'evasion-',
+            'high-severity-',
+            'malicious-header-',
+            'header-',
+            'regex-',
+        )
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if event_type.startswith(prefix):
+                    event_type = event_type[len(prefix):]
+                    changed = True
+
+        # Normalize common aliases so kill-chain and campaign rules match
+        alias_map = {
+            'sql-injection': 'sqli',
+            'command-injection': 'cmdi',
+            'cmd-injection': 'cmdi',
+            'xxe-attempt': 'xxe',
+            'api-rate-limit': 'rate-limit',
+            'bot-detected': 'bot-detected',
+            'info-disclosure': 'info_disclosure',
+            'auth-bypass': 'auth_bypass',
+            'cache-poisoning': 'cache_poisoning',
+            'scanner-probe': 'scanner_probe',
+        }
+        return alias_map.get(event_type, event_type)
 
     def _determine_phase(self) -> str:
         for phase, config in KILL_CHAIN.items():

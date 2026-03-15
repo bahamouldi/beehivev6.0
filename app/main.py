@@ -290,13 +290,13 @@ def _is_regex_false_positive(reason: str, url: str, body: str) -> bool:
     # FP-KAIROS-2: Emails dans query params (email=user@company.fr)
     # Le @ peut déclencher regex-xss ou regex-encoding_evasion
     if reason in ('regex-xss', 'regex-encoding_evasion'):
-        if re.search(r'[?&]email=[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}', url):
+        if _re_fp.search(r'[?&]email=[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}', url):
             return True
 
     # FP-KAIROS-3: Dates dans les URLs IDTS/Kairos (date=2026-03-14)
     # Les tirets dans les dates peuvent déclencher regex-sqli
     if reason in ('regex-sqli', 'regex-injection'):
-        if re.search(r'[?&]date=\d{4}-\d{2}-\d{2}', url):
+        if _re_fp.search(r'[?&]date=\d{4}-\d{2}-\d{2}', url):
             if not any(kw in url.lower() for kw in ["'", 'union', 'select', 'drop', '--']):
                 return True
 
@@ -314,7 +314,7 @@ def _is_regex_false_positive(reason: str, url: str, body: str) -> bool:
     # FP-KAIROS-5: UUIDs et IDs numériques complexes dans les URLs
     # /api/resource/550e8400-e29b-41d4-a716-446655440000 → regex-path-traversal
     if reason == 'regex-path-traversal':
-        if re.search(r'/api/[a-zA-Z_]+/[a-f0-9\-]{32,}$', url):
+        if _re_fp.search(r'/api/[a-zA-Z_]+/[a-f0-9\-]{32,}$', url):
             return True
 
     # ── FP-REFERER : header Referer contient les routes Angular légitimes ──
@@ -341,7 +341,7 @@ def _is_regex_false_positive(reason: str, url: str, body: str) -> bool:
             'dev.kairos.dpc.com.tn',
         ]
         if any(h in (url or '') for h in known_admin_frontends):
-            if re.search(r'/admin/(?:dashboard|users|settings|profile|home)', url or '', re.I):
+            if _re_fp.search(r'/admin/(?:dashboard|users|settings|profile|home)', url or '', _re_fp.I):
                 return True
 
     # FP-REFERER-3: IDTS Front — /dashboard/rh/xxx, /dashboard/conducteur/xxx
@@ -729,7 +729,7 @@ async def waf_middleware(request: Request, call_next):
     # ========== v5.0: PERFORMANCE ENGINE (dedup + pre-screen) ==========
     try:
         perf_engine = performance_engine.get_engine()
-        safe = perf_engine.pre_screen_request(path, method, dict(request.headers))
+        safe = perf_engine.pre_screen(method, path, '')
         if safe:
             # Known safe path, skip heavy checks (still log)
             pass
@@ -891,7 +891,7 @@ async def waf_middleware(request: Request, call_next):
     # --- 3. Bot Detection ---
     try:
         bot_result = bot_detector.analyze_request(
-            headers_dict, client, path, method
+            client, method, path, headers_dict
         )
         bot_score = bot_result.get('score', 0) if isinstance(bot_result, dict) else 0
         if bot_score >= 0.85:
@@ -911,7 +911,7 @@ async def waf_middleware(request: Request, call_next):
     # --- 3b. v5.0 Advanced Bot Manager (JS challenges, credential stuffing, TLS fingerprint) ---
     try:
         adv_bot = bot_manager_advanced.get_manager()
-        adv_bot_result = adv_bot.analyze_request(headers_dict, client, path, method)
+        adv_bot_result = adv_bot.check_request(client, headers_dict.get('user-agent', ''), path, method, headers_dict)
         if adv_bot_result.get('action') == 'block':
             reason_str = adv_bot_result.get('reason', 'advanced-bot-detected')
             log.warning('Request blocked - advanced bot manager', extra={
@@ -954,6 +954,7 @@ async def waf_middleware(request: Request, call_next):
             BLOCKED_TOTAL.labels(reason='threat-intel').inc()
             ACTIVE_REQUESTS.dec()
             ip_blocklist.record_attack(client)
+            correlation_engine.record_event(client, reason_str, path=path, severity='critical')
             return JSONResponse(status_code=403, content={"blocked": True, "reason": reason_str})
     except Exception:
         log.debug('Threat intel error', exc_info=True)
@@ -974,6 +975,7 @@ async def waf_middleware(request: Request, call_next):
             BLOCKED_TOTAL.labels(reason='threat-feed').inc()
             ACTIVE_REQUESTS.dec()
             ip_blocklist.record_attack(client)
+            correlation_engine.record_event(client, reason_str, path=path, severity='critical')
             return JSONResponse(status_code=403, content={"blocked": True, "reason": reason_str})
     except Exception:
         log.debug('Threat feed error', exc_info=True)
@@ -994,6 +996,7 @@ async def waf_middleware(request: Request, call_next):
             })
             BLOCKED_TOTAL.labels(reason='session-violation').inc()
             ACTIVE_REQUESTS.dec()
+            correlation_engine.record_event(client, reason_str, path=path, severity='high')
             return JSONResponse(status_code=403, content={"blocked": True, "reason": reason_str})
     except Exception:
         log.debug('Session protection error', exc_info=True)
@@ -1041,6 +1044,7 @@ async def waf_middleware(request: Request, call_next):
                 BLOCKED_TOTAL.labels(reason='api-security').inc()
                 ACTIVE_REQUESTS.dec()
                 ip_blocklist.record_attack(client)
+                correlation_engine.record_event(client, reason_str, path=path, severity='high')
                 return JSONResponse(status_code=403, content={
                     "blocked": True,
                     "reason": reason_str
@@ -1051,8 +1055,7 @@ async def waf_middleware(request: Request, call_next):
     # --- 6b. v5.0 API Discovery (Shadow API, GraphQL depth, quota) ---
     try:
         api_disc = api_discovery.get_engine()
-        api_disc_result = api_disc.check_request(path, method, headers_dict,
-                                                  body_text if body else '', client, query_string)
+        api_disc_result = api_disc.check_request(method, path, {}, headers_dict.get('content-type', ''), client)
         if api_disc_result.get('action') == 'block':
             reason_str = api_disc_result.get('reason', 'api-discovery-violation')
             log.warning('Request blocked - API discovery', extra={
@@ -1062,6 +1065,7 @@ async def waf_middleware(request: Request, call_next):
             })
             BLOCKED_TOTAL.labels(reason='api-discovery').inc()
             ACTIVE_REQUESTS.dec()
+            correlation_engine.record_event(client, reason_str, path=path, severity='high')
             return JSONResponse(status_code=403, content={"blocked": True, "reason": reason_str})
     except Exception:
         log.debug('API discovery error', exc_info=True)
@@ -1069,7 +1073,7 @@ async def waf_middleware(request: Request, call_next):
 
     # ========== v4.0 MODULES: VIRTUAL PATCHING (CVE-specific) ==========
     try:
-        vp_result = virtual_patching.check_request(full_path, body_text, headers_dict, method)
+        vp_result = virtual_patching.check_request(full_path, method, body=body_text, headers=headers_dict)
         if vp_result and vp_result.get('blocked'):
             cve_id = vp_result.get('cve_id', 'unknown')
             log.warning('Request blocked - virtual patch', extra={
@@ -1081,7 +1085,7 @@ async def waf_middleware(request: Request, call_next):
             BLOCKED_TOTAL.labels(reason='virtual-patch').inc()
             ACTIVE_REQUESTS.dec()
             ip_blocklist.record_attack(client)
-            correlation_engine.record_event(f'virtual-patch-{cve_id}', client, path, 'critical')
+            correlation_engine.record_event(client, f'virtual-patch-{cve_id}', path=path, severity='critical')
             compliance_engine.record_detection(f'virtual-patch', client_ip=client, path=path, severity='critical')
             compliance_engine_v5.record_detection(f'virtual-patch', client_ip=client, path=path, severity='critical')
             return JSONResponse(status_code=403, content={"blocked": True, "reason": f"virtual-patch-{cve_id}"})
@@ -1090,9 +1094,10 @@ async def waf_middleware(request: Request, call_next):
 
     # ========== v4.0 MODULES: COOKIE SECURITY ==========
     try:
-        cookie_result = cookie_security.check_request_cookies(headers_dict, client)
+        cookie_result = cookie_security.check_request_cookies(headers_dict.get('cookie', ''), client)
         if cookie_result and cookie_result.get('action') == 'block':
-            reason_str = cookie_result.get('reason', 'cookie-tampering')
+            _cookie_issues = cookie_result.get('issues', [])
+            reason_str = _cookie_issues[0].get('type', 'cookie-tampering') if _cookie_issues else 'cookie-tampering'
             log.warning('Request blocked - cookie security', extra={
                 'event': 'blocked', 'client_ip': client, 'method': method,
                 'path': path, 'reason': reason_str,
@@ -1102,7 +1107,7 @@ async def waf_middleware(request: Request, call_next):
             BLOCKED_TOTAL.labels(reason='cookie-security').inc()
             ACTIVE_REQUESTS.dec()
             ip_blocklist.record_attack(client)
-            correlation_engine.record_event('cookie-tampering', client, path, 'high')
+            correlation_engine.record_event(client, 'cookie-tampering', path=path, severity='high')
             compliance_engine.record_detection('cookie-tampering', client_ip=client, path=path, severity='high')
             compliance_engine_v5.record_detection('cookie-tampering', client_ip=client, path=path, severity='high')
             return JSONResponse(status_code=403, content={"blocked": True, "reason": reason_str})
@@ -1121,7 +1126,7 @@ async def waf_middleware(request: Request, call_next):
                 })
                 BLOCKED_TOTAL.labels(reason='websocket-violation').inc()
                 ACTIVE_REQUESTS.dec()
-                correlation_engine.record_event('websocket-violation', client, path, 'medium')
+                correlation_engine.record_event(client, 'websocket-violation', path=path, severity='medium')
                 return JSONResponse(status_code=403, content={"blocked": True, "reason": reason_str})
     except Exception:
         log.debug('WebSocket inspector error', exc_info=True)
@@ -1142,7 +1147,7 @@ async def waf_middleware(request: Request, call_next):
             BLOCKED_TOTAL.labels(reason='payload-analysis').inc()
             ACTIVE_REQUESTS.dec()
             ip_blocklist.record_attack(client)
-            correlation_engine.record_event(reason_str, client, path, 'high')
+            correlation_engine.record_event(client, reason_str, path=path, severity='high')
             compliance_engine.record_detection(reason_str, client_ip=client, path=path, severity='high')
             compliance_engine_v5.record_detection(reason_str, client_ip=client, path=path, severity='high')
             return JSONResponse(status_code=403, content={"blocked": True, "reason": reason_str})
@@ -1219,6 +1224,7 @@ async def waf_middleware(request: Request, call_next):
                 auto_blocked = ip_blocklist.record_attack(client)
                 if auto_blocked:
                     log.error(f'IP {client} auto-blocked after repeated attacks', extra={'event': 'auto-block', 'client_ip': client})
+                correlation_engine.record_event(client, f'header-{header_name}-{reason}', path=path, severity='high')
                 return JSONResponse(status_code=403, content={"blocked": True, "reason": f'malicious-header-{header_name}'})
 
     # Lightweight checks for infrastructure headers (only specific patterns)
@@ -1252,6 +1258,7 @@ async def waf_middleware(request: Request, call_next):
             auto_blocked = ip_blocklist.record_attack(client)
             if auto_blocked:
                 log.error(f'IP {client} auto-blocked after repeated attacks', extra={'event': 'auto-block', 'client_ip': client})
+            correlation_engine.record_event(client, f'malicious-header-{header_name}', path=path, severity='critical')
             return JSONResponse(status_code=403, content={"blocked": True, "reason": f'malicious-header-{header_name}'})
     # ========== END HEADER VALIDATION ==========
 
@@ -1275,7 +1282,7 @@ async def waf_middleware(request: Request, call_next):
                     BLOCKED_TOTAL.labels(reason='evasion-detected').inc()
                     ACTIVE_REQUESTS.dec()
                     ip_blocklist.record_attack(client)
-                    correlation_engine.record_event(f'evasion-{reason}', client, path, 'critical')
+                    correlation_engine.record_event(client, f'evasion-{reason}', path=path, severity='critical')
                     compliance_engine.record_detection(reason, client_ip=client, path=path, severity='critical')
                     compliance_engine_v5.record_detection(reason, client_ip=client, path=path, severity='critical')
                     evasion_blocked = True
@@ -1314,7 +1321,7 @@ async def waf_middleware(request: Request, call_next):
             log.error(f'IP {client} auto-blocked after repeated attacks', extra={'event': 'auto-block', 'client_ip': client})
         # v4.0: Record in correlation engine and compliance
         try:
-            correlation_engine.record_event(reason, client, path, 'high')
+            correlation_engine.record_event(client, reason, path=path, severity='high')
             compliance_engine.record_detection(reason, client_ip=client, path=path, severity='high')
             compliance_engine_v5.record_detection(reason, client_ip=client, path=path, severity='high')
         except Exception:
@@ -1359,7 +1366,7 @@ async def waf_middleware(request: Request, call_next):
                 log.error(f'IP {client} auto-blocked after repeated attacks', extra={'event': 'auto-block', 'client_ip': client})
             # v4.0: Record in correlation engine and compliance
             try:
-                correlation_engine.record_event(attack_reason, client, path, 'high')
+                correlation_engine.record_event(client, attack_reason, path=path, severity='high')
                 compliance_engine.record_detection(attack_reason, client_ip=client, path=path, severity='high')
                 compliance_engine_v5.record_detection(attack_reason, client_ip=client, path=path, severity='high')
             except Exception:
@@ -1376,7 +1383,7 @@ async def waf_middleware(request: Request, call_next):
     try:
         payload_combined = full_path + ' ' + body_text
         if len(payload_combined) > 10:  # Skip trivial requests
-            zd_result = zero_day_detector.analyze_payload(payload_combined)
+            zd_result = zero_day_detector.analyze_payload(full_path, body_text)
             if zd_result and zd_result.get('is_anomaly'):
                 log.warning('Request blocked - zero-day detection', extra={
                     'event': 'blocked', 'client_ip': client, 'method': method,
@@ -1388,7 +1395,7 @@ async def waf_middleware(request: Request, call_next):
                 BLOCKED_TOTAL.labels(reason='zero-day').inc()
                 ACTIVE_REQUESTS.dec()
                 ip_blocklist.record_attack(client)
-                correlation_engine.record_event('zero-day-anomaly', client, path, 'critical')
+                correlation_engine.record_event(client, 'zero-day-anomaly', path=path, severity='critical')
                 compliance_engine.record_detection('zero-day', client_ip=client, path=path, severity='critical')
                 compliance_engine_v5.record_detection('zero-day', client_ip=client, path=path, severity='critical')
                 return JSONResponse(status_code=403, content={
@@ -1400,11 +1407,17 @@ async def waf_middleware(request: Request, call_next):
 
     # ========== v4.0: ADAPTIVE LEARNING (learn from clean traffic) ==========
     try:
-        adaptive_learning.learn_request(path, method, headers_dict, body_text, query_string)
-        al_result = adaptive_learning.check_request(path, method, headers_dict, body_text, query_string)
+        al_result = adaptive_learning.check_request(
+            path,
+            method,
+            query_string=query_string,
+            headers=headers_dict,
+            body=body_text,
+            client_ip=client,
+        )
         if al_result and al_result.get('action') == 'block':
             anomalies = al_result.get('anomalies', [])
-            reason_str = anomalies[0] if anomalies else 'adaptive-anomaly'
+            reason_str = anomalies[0].get('type', 'adaptive-anomaly') if anomalies else 'adaptive-anomaly'
             log.warning('Request blocked - adaptive learning', extra={
                 'event': 'blocked', 'client_ip': client, 'method': method,
                 'path': path, 'reason': reason_str,
@@ -1413,6 +1426,17 @@ async def waf_middleware(request: Request, call_next):
             BLOCKED_TOTAL.labels(reason='adaptive-learning').inc()
             ACTIVE_REQUESTS.dec()
             return JSONResponse(status_code=403, content={"blocked": True, "reason": reason_str})
+
+        # Learn only from clean, non-flagged traffic to avoid poisoning the model
+        if not al_result or al_result.get('action') == 'allow':
+            adaptive_learning.learn_request(
+                path,
+                method,
+                query_string=query_string,
+                headers=headers_dict,
+                body=body_text,
+                client_ip=client,
+            )
     except Exception:
         log.debug('Adaptive learning error', exc_info=True)
 
@@ -1497,17 +1521,21 @@ async def waf_middleware(request: Request, call_next):
         # Rebuild response with cloaked headers if needed
         if cloaked_headers:
             from starlette.responses import Response as StarletteResponse
-            # Read body if not already read
+            # Read body: prefer .body attribute (StarletteResponse rebuilt by DLP)
+            # falling back to async body_iterator (original streaming response)
             try:
-                resp_body_parts_final = []
-                async for chunk in response.body_iterator:
-                    if isinstance(chunk, bytes):
-                        resp_body_parts_final.append(chunk)
-                    else:
-                        resp_body_parts_final.append(chunk.encode('utf-8'))
-                resp_body_final = b''.join(resp_body_parts_final)
+                if hasattr(response, 'body') and isinstance(getattr(response, 'body', None), bytes):
+                    resp_body_final = response.body
+                else:
+                    resp_body_parts_final = []
+                    async for chunk in response.body_iterator:
+                        if isinstance(chunk, bytes):
+                            resp_body_parts_final.append(chunk)
+                        else:
+                            resp_body_parts_final.append(chunk.encode('utf-8'))
+                    resp_body_final = b''.join(resp_body_parts_final)
             except Exception:
-                pass  # Body may have been read already by DLP
+                pass  # Body unreadable — skip cloaking
             
             if resp_body_final is not None:
                 # Cloak response body (remove stack traces, db errors, internal info)
@@ -1556,11 +1584,14 @@ async def waf_middleware(request: Request, call_next):
     
     # ========== v4.0: COOKIE SECURITY (response) ==========
     try:
-        cookie_resp_result = cookie_security.check_response_cookies(dict(response.headers))
-        if cookie_resp_result and cookie_resp_result.get('warnings'):
-            log.info('Cookie security warnings in response', extra={
+        _set_cookie_values = response.headers.getlist('set-cookie') if hasattr(response.headers, 'getlist') else [
+            v for k, v in response.headers.items() if k.lower() == 'set-cookie'
+        ]
+        cookie_resp_result = cookie_security.check_response_cookies(_set_cookie_values)
+        if cookie_resp_result and cookie_resp_result.get('findings'):
+            log.info('Cookie security findings in response', extra={
                 'event': 'cookie-warning', 'client_ip': client,
-                'path': path, 'warnings': cookie_resp_result['warnings'][:5]
+                'path': path, 'findings': cookie_resp_result['findings'][:5]
             })
     except Exception:
         log.debug('Cookie response check error', exc_info=True)
@@ -1776,6 +1807,14 @@ def enterprise_stats():
         stats['compliance_v5'] = compliance_engine_v5.get_engine().get_stats()
     except Exception:
         stats['compliance_v5'] = 'unavailable'
+    try:
+        stats['response_cloaking'] = response_cloaking.get_engine().get_stats()
+    except Exception:
+        stats['response_cloaking'] = 'unavailable'
+    try:
+        stats['cookie_security'] = cookie_security.get_engine().get_stats()
+    except Exception:
+        stats['cookie_security'] = 'unavailable'
     stats['total_rules'] = len(rules.list_rules())
     stats['version'] = '5.0.0'
     stats['total_modules'] = 27
@@ -1798,7 +1837,7 @@ def admin_correlation():
     engine = correlation_engine.get_engine()
     return {
         "stats": engine.get_stats(),
-        "active_campaigns": engine.campaigns if hasattr(engine, 'campaigns') else [],
+        "active_campaigns": engine.get_active_campaigns(),
     }
 
 @app.post('/admin/adaptive-mode', dependencies=[Depends(verify_api_key)])
