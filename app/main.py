@@ -317,6 +317,43 @@ def _is_regex_false_positive(reason: str, url: str, body: str) -> bool:
         if re.search(r'/api/[a-zA-Z_]+/[a-f0-9\-]{32,}$', url):
             return True
 
+    # ── FP-REFERER : header Referer contient les routes Angular légitimes ──
+    # Le navigateur envoie Referer automatiquement lors de la navigation/déconnexion.
+    # Les routes Angular de Kairos et IDTS déclenchent des faux positifs.
+
+    # FP-REFERER-1: Kairos Front — /Gestionnaire_Production/xxx
+    # "Gestionnaire_Production/clients" matche le pattern "re_" (Stripe token prefix)
+    # C'est un faux positif car "re_P" dans "Gestionnai_re_Production" n'est pas un token.
+    if reason == 'regex-sensitive_data':
+        kairos_fp_paths = [
+            'Gestionnaire_Production/', '/Gestionnaire_Production',
+            'gestionnaire_production/',
+        ]
+        if any(p.lower() in (url or '').lower() for p in kairos_fp_paths):
+            return True
+
+    # FP-REFERER-2: Kairos Front — /admin/dashboard
+    # La règle CVE-2025 bloque /admin/dashboard mais c'est une route Angular légitime.
+    if reason == 'regex-cve_2025_v5':
+        known_admin_frontends = [
+            'front.kairos.dpc.com.tn',
+            'dev.idts.dpc.com.tn',
+            'dev.kairos.dpc.com.tn',
+        ]
+        if any(h in (url or '') for h in known_admin_frontends):
+            if re.search(r'/admin/(?:dashboard|users|settings|profile|home)', url or '', re.I):
+                return True
+
+    # FP-REFERER-3: IDTS Front — /dashboard/rh/xxx, /dashboard/conducteur/xxx
+    # La règle regex-idor_access bloque ces URLs de navigation Angular normales.
+    if reason == 'regex-idor_access':
+        idts_dashboard_paths = [
+            'dashboard/rh/', 'dashboard/conducteur/', 'dashboard/pointage',
+            'dashboard/monPointage', 'dashboard/affectOuvrier',
+        ]
+        if any(p in (url or '') for p in idts_dashboard_paths):
+            return True
+
     return False
 # ==================== END FALSE POSITIVE FILTER ====================
 
