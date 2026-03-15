@@ -707,18 +707,16 @@ _ALLOW_IDTS_FRONT = [
 
 # ── KAIROS BACK (dev.kairos.dpc.com.tn) — context-path=/api ──
 _ALLOW_KAIROS_BACK = [
-    '/auth/login', '/auth/register', '/api/contact',
+    '/auth', '/contact', '/unite', '/hR', '/gestionnaireprod', '/invoice',
+    '/roles', '/users', '/user-details',
     '/api/basic_Material', '/api/PrimaryMatrial', '/api/PackagingAll',
     '/api/lot', '/api/Reposit', '/api/Adress_All', '/api/factoryall',
-    '/api/Prefactory', '/api/prefactoryall',
-    '/api/ProductAll', '/api/QuarentineMP', '/api/QuarentinePr',
-    '/api/rejection', '/api/hR', '/api/gestionnaireprod',
+    '/api/Prefactory', '/api/prefactoryall', '/api/ProductAll', 
+    '/api/QuarentineMP', '/api/QuarentinePr', '/api/rejection', 
     '/api/Customer', '/api/Provider', '/api/bcclient', '/api/bcfournisseur',
-    '/api/blclient', '/api/blfournisseur',
-    '/api/Invoice_Details', '/api/paymentall', '/api/cotation',
-    '/api/taxation', '/api/currency', '/api/Transaction_All',
-    '/unite', '/hR', '/gestionnaireprod', '/invoice',
-    '/roles', '/users', '/user-details',
+    '/api/blclient', '/api/blfournisseur', '/api/Invoice_Details', 
+    '/api/paymentall', '/api/cotation', '/api/taxation', '/api/currency', 
+    '/api/Transaction_All'
 ]
 
 # ── KAIROS FRONT (front.kairos.dpc.com.tn) — Angular SPA, pas d'API propre ──
