@@ -271,6 +271,52 @@ def _is_regex_false_positive(reason: str, url: str, body: str) -> bool:
             if not any(kw in query_part.lower() for kw in ['cn=', 'uid=', 'objectclass', 'dc=', 'ou=', 'sn=']):
                 return True
 
+    # FP-KAIROS-1: Endpoints avec underscores et majuscules (Adress_All, Transaction_All...)
+    # Ces noms peuvent déclencher les règles regex-rce
+    if reason in ('regex-rce', 'regex-injection', 'regex-encoding_evasion'):
+        kairos_api = [
+            '/api/Adress_All', '/api/Transaction_All', '/api/basic_Material',
+            '/api/PrimaryMatrial', '/api/PackagingAll', '/api/QuarentineMP',
+            '/api/QuarentinePr', '/api/ProductAll', '/api/Invoice_Details',
+            '/api/factoryall', '/api/Prefactory', '/api/prefactoryall',
+            '/api/BCClientController', '/api/BCFournisseurController',
+        ]
+        if any(p in url for p in kairos_api):
+            if not any(kw in url.lower() for kw in [
+                '../', 'etc/passwd', 'union select', '$(', '`', ';id', '/bin/', 'cmd='
+            ]):
+                return True
+
+    # FP-KAIROS-2: Emails dans query params (email=user@company.fr)
+    # Le @ peut déclencher regex-xss ou regex-encoding_evasion
+    if reason in ('regex-xss', 'regex-encoding_evasion'):
+        if re.search(r'[?&]email=[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}', url):
+            return True
+
+    # FP-KAIROS-3: Dates dans les URLs IDTS/Kairos (date=2026-03-14)
+    # Les tirets dans les dates peuvent déclencher regex-sqli
+    if reason in ('regex-sqli', 'regex-injection'):
+        if re.search(r'[?&]date=\d{4}-\d{2}-\d{2}', url):
+            if not any(kw in url.lower() for kw in ["'", 'union', 'select', 'drop', '--']):
+                return True
+
+    # FP-KAIROS-4: Upload d'analyses de laboratoire (CSV chimiques)
+    # Les noms peuvent contenir des patterns qui ressemblent à des injections
+    if reason == 'regex-rce':
+        upload_paths = [
+            '/api/QuarentineMP/uploadanalyse', '/api/QuarentinePr/uploadanalyse',
+            '/api/rejection/uploadanalyMP', '/api/rejection/uploadanalyseproduit',
+            '/api/lot/add',
+        ]
+        if any(p in url for p in upload_paths):
+            return True
+
+    # FP-KAIROS-5: UUIDs et IDs numériques complexes dans les URLs
+    # /api/resource/550e8400-e29b-41d4-a716-446655440000 → regex-path-traversal
+    if reason == 'regex-path-traversal':
+        if re.search(r'/api/[a-zA-Z_]+/[a-f0-9\-]{32,}$', url):
+            return True
+
     return False
 # ==================== END FALSE POSITIVE FILTER ====================
 

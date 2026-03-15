@@ -340,6 +340,21 @@ class APIEndpointRateLimiter:
             r'POST:/register': (5, 60),
             r'POST:/signup': (10, 60),
 
+            # ── KAIROS BACK auth (login sans /api prefix) ──
+            r'POST:/auth/login':                      (5, 60),   # 5 login/min
+            r'POST:/auth/register':                   (5, 60),
+            r'GET:/contact/réinitialisationPassword': (3, 300),  # reset password
+            # Uploads lourds Kairos (analyses, lots, quarantaine)
+            r'POST:/api/lot/add':                     (20, 60),
+            r'POST:/api/QuarentineMP/uploadanalyse':  (10, 60),
+            r'POST:/api/QuarentinePr/uploadanalyse':  (10, 60),
+            r'POST:/api/rejection/upload.*':          (10, 60),
+            r'POST:/api/rejection/.*':                (50, 60),
+            # Operations en masse Kairos (normales en production)
+            r'POST:/api/factoryall/.*':               (200, 60),
+            r'POST:/api/Prefactory/.*':               (200, 60),
+            r'POST:/api/prefactoryall/.*':            (200, 60),
+
             # Admin — limiter mais pas trop
             r'/api/v\d+/admin': (60, 60),
 

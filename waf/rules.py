@@ -683,12 +683,31 @@ _DEFAULT_ALLOW = (
     '/api/login,/api/auth/login,/api/auth/register,/api/search,/api/health,'
     '/api/v1/auth/login,/api/dashboard/stats,/api/orders,/api/products,'
     '/api/users,/api/status,/api/csrf-token,/api/auth,'
-    # ── IDTS application endpoints ──
+    # ── IDTS BACK endpoints (context-path=/api) ──
     '/api/chantiers,/api/clients,/api/factures,/api/fournisseurs,'
-    '/api/roles,/api/pointages,/api/pointageChefChantierAndConducteur,'
-    '/api/taches,/api/salaires,/api/remboursements,/api/notifications,'
-    '/api/user-details,/api/fileFacture,/api/uploadPhoto,/api/payes,'
-    '/api/chantierUsers,/api/notification,/api/sendNotificationForUserNotPointedToday'
+    '/api/roles,/api/pointage,/api/pointages,/api/pointageChefChantierAndConducteur,'
+    '/api/tache,/api/taches,/api/salaire,/api/salaires,'
+    '/api/remboursement,/api/remboursements,/api/notification,/api/notifications,'
+    '/api/user-details,/api/fileFacture,/api/images,/api/uploadPhoto,'
+    '/api/paye,/api/payes,/api/chantUser,/api/chantierUsers,'
+    '/api/auth/login,/api/auth/register,/api/auth/change-password,'
+    '/api/auth/reset-password,/api/auth/validKey,'
+    '/api/users,/api/sendNotificationForUserNotPointedToday,'
+    '/api/notification/token,/api/notification/topic,'
+    # ── KAIROS BACK endpoints (context-path=/api) ──
+    '/auth/login,/auth/register,'
+    '/api/contact,'
+    '/api/basic_Material,/api/PrimaryMatrial,/api/PackagingAll,'
+    '/api/lot,/api/Reposit,/api/Adress_All,/api/factoryall,'
+    '/api/Prefactory,/api/prefactoryall,'
+    '/api/ProductAll,/api/QuarentineMP,/api/QuarentinePr,'
+    '/api/rejection,/api/hR,/api/gestionnaireprod,'
+    '/api/Customer,/api/Provider,/api/bcclient,/api/bcfournisseur,'
+    '/api/blclient,/api/blfournisseur,'
+    '/api/Invoice_Details,/api/paymentall,/api/cotation,'
+    '/api/taxation,/api/currency,/api/Transaction_All,'
+    '/unite,/hR,/gestionnaireprod,/invoice,'
+    '/roles,/users,/user-details,/contact'
 )
 ALLOW_PATHS = os.environ.get('BEEWAF_ALLOW_PATHS', _DEFAULT_ALLOW).split(',')
 ALLOW_PATHS = [p.strip() for p in ALLOW_PATHS if p.strip()]
@@ -721,8 +740,14 @@ def _headers_to_text(headers: Dict[str, str]) -> str:
 _SAFE_PATH_PREFIXES = (
     '/static/', '/assets/', '/css/', '/js/', '/images/', '/img/', '/fonts/',
     '/media/', '/favicon', '/manifest', '/sw.js', '/service-worker',
-    # IDTS Angular SPA: all /dashboard/* routes are frontend-rendered
+    # IDTS Front Angular SPA
     '/dashboard/',
+    '/reset/',
+    # Kairos Front Angular (lazy-loading modules)
+    '/authentication/',
+    '/admin/',
+    '/customer/',
+    '/Gestionnaire_Production/',
 )
 _SAFE_PATH_EXACT = {
     '/register', '/login', '/logout', '/signup', '/signin', '/signout',
@@ -731,11 +756,16 @@ _SAFE_PATH_EXACT = {
     '/sitemap.xml', '/robots.txt', '/feed.xml', '/rss.xml', '/atom.xml',
     '/manifest.json', '/browserconfig.xml', '/crossdomain.xml',
     '/.well-known/security.txt', '/security.txt', '/humans.txt', '/ads.txt',
-    # IDTS Angular routes
+    # IDTS Front Angular routes
     '/forgetPassword', '/changePassword', '/erreur',
+    '/reset/finish',
+    # Kairos Front Angular routes
+    '/authentication/login', '/authentication/forgetpsw',
+    '/customer/bon-de-commande', '/customer/bondelivraisonclient',
+    '/customer/add-devis',
 }
 
-_SPA_ROUTE_PREFIXES = ('/dashboard/',)
+_SPA_ROUTE_PREFIXES = ('/dashboard/', '/authentication/', '/admin/', '/customer/', '/Gestionnaire_Production/')
 
 def _is_safe_request(path: str, body: str) -> bool:
     """Fast pre-filter: return True if the request is obviously safe."""
