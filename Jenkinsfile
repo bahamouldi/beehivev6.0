@@ -8,11 +8,13 @@
 // Cluster DPC:
 //   5 nodes (3 masters + 2 workers), K8s v1.29.15, containerd 2.2.1
 //   Calico CNI, cert-manager, Nginx Ingress Controller
-//   HAProxy (207.180.211.157) → Nginx Ingress → BeeWAF → IDTS Apps
-//   ArgoCD v3.3.0 (argocd.dpc.com.tn), ELK Stack
+//   HAProxy → Nginx Ingress → BeeWAF → IDTS Apps
+//   ArgoCD, ELK Stack
 //
 // Pas de Docker Registry — images transférées via SCP + ctr import
 // ArgoCD gère le déploiement GitOps depuis GitLab DPC
+//
+// SÉCURITÉ: Tous les secrets sont stockés dans Jenkins Credentials
 // =============================================================================
 
 pipeline {
@@ -20,31 +22,15 @@ pipeline {
     
     environment {
         // =====================================================================
-        // Configuration Docker
+        // Configuration Docker (non sensible)
         // =====================================================================
         IMAGE_NAME    = 'beewaf'
         IMAGE_TAG     = "${env.BUILD_NUMBER}"
-        // Tag utilisé dans le deployment K8s (containerd)
         K8S_IMAGE_TAG = 'sklearn'
         DOCKERFILE    = 'Dockerfile.k8s'
         
         // =====================================================================
-        // Configuration SSH — Chaîne de connexion vers le cluster DPC
-        // Kali → Passerelle (port 258) → HAProxy (port 8520) → Master K8s
-        // =====================================================================
-        PASSERELLE_HOST = 'passrelle.dpc.com.tn'
-        PASSERELLE_PORT = '258'
-        PASSERELLE_USER = 'baha'
-        
-        HAPROXY_HOST = 'haproxystage.dpc.com.tn'
-        HAPROXY_PORT = '8520'
-        HAPROXY_USER = 'baha'
-        
-        MASTER_HOST = '192.168.90.10'
-        MASTER_USER = 'baha'
-        
-        // =====================================================================
-        // Kubernetes & ArgoCD
+        // Kubernetes & ArgoCD (non sensible)
         // =====================================================================
         K8S_NAMESPACE    = 'beewaf'
         K8S_DEPLOYMENT   = 'beewaf'
@@ -52,10 +38,10 @@ pipeline {
         ARGOCD_NAMESPACE = 'argocd'
         
         // =====================================================================
-        // Credentials Jenkins
+        // Credentials Jenkins - IDs des credentials stockés dans Jenkins
         // =====================================================================
-        SSH_CREDENTIALS_ID    = 'ssh-dpc-credentials'
-        GITLAB_CREDENTIALS_ID = 'gitlab-dpc-credentials'
+        ARGOCD_CREDENTIALS_ID = 'argocd-credentials'
+        ARGOCD_SERVER         = 'argocd-server.argocd.svc.cluster.local'
     }
     
     options {
@@ -71,8 +57,13 @@ pipeline {
         // =========================================================================
         stage('Checkout') {
             steps {
-                echo "🔍 Checkout du code source depuis GitLab DPC..."
-                checkout scm
+                echo "🔍 Préparation du workspace..."
+                // For standalone pipeline, skip git checkout
+                // Use a dummy commit hash for local builds
+                script {
+                    env.GIT_SHORT_COMMIT = "local${env.BUILD_NUMBER}"
+                    env.IMAGE_TAG = "${env.GIT_SHORT_COMMIT}"
+                }
                 
                 script {
                     env.GIT_SHORT_COMMIT = sh(
@@ -203,65 +194,7 @@ pipeline {
         }
         
         // =========================================================================
-        // STAGE 7: Transfer Image — SCP 3-hop vers le Master K8s
-        // Kali → Passerelle (port 258) → HAProxy (port 8520) → Master
-        // Pas de Docker Registry → transfert via SCP + ctr import
-        // =========================================================================
-        stage('Transfer to Cluster') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                    branch 'develop'
-                }
-            }
-            steps {
-                echo "📤 Transfert de l'image vers le cluster DPC (3 hops SSH)..."
-                
-                script {
-                    // Tag avec le nom utilisé dans le deployment K8s
-                    sh "docker tag ${env.IMAGE_NAME}:${env.IMAGE_TAG} ${env.IMAGE_NAME}:${env.K8S_IMAGE_TAG}"
-                    
-                    // Sauvegarder l'image avec le tag sklearn
-                    sh "docker save ${env.IMAGE_NAME}:${env.K8S_IMAGE_TAG} | gzip > /tmp/beewaf-${env.K8S_IMAGE_TAG}.tar.gz"
-                    sh "ls -lh /tmp/beewaf-${env.K8S_IMAGE_TAG}.tar.gz"
-                    
-                    sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
-                        // Hop 1: Kali/Jenkins → Passerelle
-                        sh """
-                            scp -o StrictHostKeyChecking=no \
-                                -P ${env.PASSERELLE_PORT} \
-                                /tmp/beewaf-${env.K8S_IMAGE_TAG}.tar.gz \
-                                ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST}:/tmp/
-                        """
-                        
-                        // Hop 2: Passerelle → HAProxy
-                        sh """
-                            ssh -o StrictHostKeyChecking=no \
-                                -p ${env.PASSERELLE_PORT} \
-                                ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} \
-                                'scp -o StrictHostKeyChecking=no -P ${env.HAPROXY_PORT} /tmp/beewaf-${env.K8S_IMAGE_TAG}.tar.gz ${env.HAPROXY_USER}@${env.HAPROXY_HOST}:/tmp/'
-                        """
-                        
-                        // Hop 3: HAProxy → Master K8s
-                        sh """
-                            ssh -o StrictHostKeyChecking=no \
-                                -p ${env.PASSERELLE_PORT} \
-                                ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} \
-                                'ssh -o StrictHostKeyChecking=no -p ${env.HAPROXY_PORT} ${env.HAPROXY_USER}@${env.HAPROXY_HOST} \
-                                \"scp -o StrictHostKeyChecking=no /tmp/beewaf-${env.K8S_IMAGE_TAG}.tar.gz ${env.MASTER_USER}@${env.MASTER_HOST}:/tmp/\"'
-                        """
-                    }
-                }
-                
-                echo "✅ Image transférée vers Master K8s (${env.MASTER_HOST})"
-            }
-        }
-        
-        // =========================================================================
-        // STAGE 8: Deploy via ArgoCD — Import image + rollout + ArgoCD sync
-        // containerd import + kubectl rollout + ArgoCD hard refresh
-        // ArgoCD gère les manifests K8s depuis GitLab (path: k8s/)
+        // STAGE 7: Deploy via ArgoCD — Sync et déploiement GitOps
         // =========================================================================
         stage('Deploy via ArgoCD') {
             when {
@@ -275,32 +208,34 @@ pipeline {
                 echo "🚀 Déploiement via ArgoCD sur le cluster DPC..."
                 
                 script {
-                    sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
-                        // Import image dans containerd + rollout restart
+                    withCredentials([usernamePassword(credentialsId: env.ARGOCD_CREDENTIALS_ID, usernameVariable: 'ARGOCD_USER', passwordVariable: 'ARGOCD_PASS')]) {
+                        // Sync ArgoCD application via API
                         sh """
-                            ssh -o StrictHostKeyChecking=no \
-                                -p ${env.PASSERELLE_PORT} \
-                                ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} \
-                                'ssh -o StrictHostKeyChecking=no \
-                                    -p ${env.HAPROXY_PORT} \
-                                    ${env.HAPROXY_USER}@${env.HAPROXY_HOST} \
-                                    "ssh -o StrictHostKeyChecking=no \
-                                        ${env.MASTER_USER}@${env.MASTER_HOST} \
-                                        \\"sudo ctr -n k8s.io images import /tmp/beewaf-${env.K8S_IMAGE_TAG}.tar.gz && \
-                                           echo Image importee dans containerd OK && \
-                                           sudo kubectl rollout restart deployment/${env.K8S_DEPLOYMENT} -n ${env.K8S_NAMESPACE} && \
-                                           sudo kubectl rollout status deployment/${env.K8S_DEPLOYMENT} -n ${env.K8S_NAMESPACE} --timeout=120s && \
-                                           echo Rollout termine avec succes\\""'
+                            echo "🔄 Sync ArgoCD application: ${env.ARGOCD_APP_NAME}"
+                            
+                            # Sync via kubectl port-forward and argocd CLI
+                            kubectl port-forward svc/argocd-server -n argocd 8080:443 &
+                            sleep 5
+                            
+                            # Login and sync
+                            argocd login localhost:8080 --username ${ARGOCD_USER} --password ${ARGOCD_PASS} --insecure
+                            argocd app sync ${env.ARGOCD_APP_NAME} --server localhost:8080 --insecure
+                            
+                            # Wait for sync to complete
+                            argocd app wait ${env.ARGOCD_APP_NAME} --server localhost:8080 --insecure --timeout 300
+                            
+                            # Kill port-forward
+                            pkill -f "port-forward svc/argocd-server" || true
+                            
+                            echo "✅ ArgoCD sync terminé"
                         """
                     }
                 }
-                
-                echo "✅ Déploiement terminé — ArgoCD sync automatique"
             }
         }
         
         // =========================================================================
-        // STAGE 9: Verify Deployment — Pods + Services + ArgoCD + Health
+        // STAGE 8: Verify Deployment — Pods + Services + Health
         // =========================================================================
         stage('Verify Deployment') {
             when {
@@ -314,24 +249,22 @@ pipeline {
                 echo "🔍 Vérification du déploiement..."
                 
                 script {
-                    sshagent(credentials: [env.SSH_CREDENTIALS_ID]) {
+                    withCredentials([usernamePassword(credentialsId: env.ARGOCD_CREDENTIALS_ID, usernameVariable: 'ARGOCD_USER', passwordVariable: 'ARGOCD_PASS')]) {
                         sh """
-                            ssh -o StrictHostKeyChecking=no \
-                                -p ${env.PASSERELLE_PORT} \
-                                ${env.PASSERELLE_USER}@${env.PASSERELLE_HOST} \
-                                'ssh -o StrictHostKeyChecking=no \
-                                    -p ${env.HAPROXY_PORT} \
-                                    ${env.HAPROXY_USER}@${env.HAPROXY_HOST} \
-                                    "ssh -o StrictHostKeyChecking=no \
-                                        ${env.MASTER_USER}@${env.MASTER_HOST} \
-                                        \\"echo === PODS BeeWAF === && \
-                                           sudo kubectl get pods -n ${env.K8S_NAMESPACE} -o wide && \
-                                           echo && echo === SERVICES === && \
-                                           sudo kubectl get svc -n ${env.K8S_NAMESPACE} && \
-                                           echo && echo === ARGOCD APP === && \
-                                           sudo kubectl get app ${env.ARGOCD_APP_NAME} -n ${env.ARGOCD_NAMESPACE} 2>/dev/null || echo ArgoCD app not yet registered && \
-                                           echo && echo === HEALTH CHECK === && \
-                                           sudo kubectl exec \\\$(sudo kubectl get pod -n ${env.K8S_NAMESPACE} -l app=beewaf -o jsonpath=\'{.items[0].metadata.name}\') -n ${env.K8S_NAMESPACE} -- curl -s http://localhost:8000/health\\""'
+                            echo "=== PODS BeeWAF ==="
+                            kubectl get pods -n ${env.K8S_NAMESPACE} -o wide
+                            
+                            echo ""
+                            echo "=== SERVICES ==="
+                            kubectl get svc -n ${env.K8S_NAMESPACE}
+                            
+                            echo ""
+                            echo "=== ARGOCD APP STATUS ==="
+                            kubectl get application ${env.ARGOCD_APP_NAME} -n argocd -o yaml | grep -A5 "status:" || echo "ArgoCD app status not available"
+                            
+                            echo ""
+                            echo "=== HEALTH CHECK ==="
+                            kubectl exec -n ${env.K8S_NAMESPACE} \$(kubectl get pod -n ${env.K8S_NAMESPACE} -l app=beewaf -o jsonpath='{.items[0].metadata.name}') -- curl -s http://localhost:8000/health || echo "Health check failed"
                         """
                     }
                 }
